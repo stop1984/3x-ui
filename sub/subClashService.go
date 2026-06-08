@@ -36,7 +36,7 @@ func (s *SubClashService) GetClash(subId string, host string) (string, string, e
 
 	seenEmails := make(map[string]struct{})
 	for _, inbound := range inbounds {
-		clients, err := s.inboundService.GetClients(inbound)
+		clients, err := s.SubService.boundSubClients(inbound, subId)
 		if err != nil {
 			logger.Error("SubClashService - GetClients: Unable to get clients from inbound")
 		}
@@ -45,10 +45,8 @@ func (s *SubClashService) GetClash(subId string, host string) (string, string, e
 		}
 		s.SubService.projectThroughFallbackMaster(inbound)
 		for _, client := range clients {
-			if client.SubID == subId {
-				seenEmails[client.Email] = struct{}{}
-				proxies = append(proxies, s.getProxies(inbound, client, host)...)
-			}
+			seenEmails[client.Email] = struct{}{}
+			proxies = append(proxies, s.getProxies(inbound, client, host)...)
 		}
 	}
 

@@ -134,7 +134,7 @@ func (s *SubService) GetSubs(subId string, host string) ([]string, []string, int
 
 	seenEmails := make(map[string]struct{})
 	for _, inbound := range inbounds {
-		clients, err := s.inboundService.GetClients(inbound)
+		clients, err := s.boundSubClients(inbound, subId)
 		if err != nil {
 			logger.Error("SubService - GetClients: Unable to get clients from inbound")
 		}
@@ -143,14 +143,12 @@ func (s *SubService) GetSubs(subId string, host string) ([]string, []string, int
 		}
 		s.projectThroughFallbackMaster(inbound)
 		for _, client := range clients {
-			if client.SubID == subId {
-				if client.Enable {
-					hasEnabledClient = true
-				}
-				result = append(result, s.GetLink(inbound, client.Email))
-				emails = append(emails, client.Email)
-				seenEmails[client.Email] = struct{}{}
+			if client.Enable {
+				hasEnabledClient = true
 			}
+			result = append(result, s.GetLink(inbound, client.Email))
+			emails = append(emails, client.Email)
+			seenEmails[client.Email] = struct{}{}
 		}
 	}
 
@@ -266,6 +264,38 @@ func (s *SubService) getInboundsBySubId(subId string) ([]*model.Inbound, error) 
 	return inbounds, nil
 }
 
+// boundSubClients resolves sub membership from the canonical clients table and
+// client_inbounds link table, then rehydrates the matching per-inbound client
+// entries from inbound.Settings. This keeps subscription generation resilient
+// when an inbound's embedded client JSON has a stale subId but the shared
+// ClientRecord already holds the correct value.
+func (s *SubService) boundSubClients(inbound *model.Inbound, subId string) ([]model.Client, error) {
+	clients, err := s.inboundService.GetClients(inbound)
+	if err != nil || clients == nil {
+		return clients, err
+	}
+	emails, err := s.inboundService.GetClientEmailsForInboundSubID(inbound.Id, subId)
+	if err != nil {
+		return nil, err
+	}
+	if len(emails) == 0 {
+		return nil, nil
+	}
+	byEmail := make(map[string]model.Client, len(clients))
+	for _, client := range clients {
+		if client.Email == "" {
+			continue
+		}
+		byEmail[client.Email] = client
+	}
+	bound := make([]model.Client, 0, len(emails))
+	for _, email := range emails {
+		if client, ok := byEmail[email]; ok {
+			bound = append(bound, client)
+		}
+	}
+	return bound, nil
+}
 // projectThroughFallbackMaster mutates the inbound in place so its
 // Listen/Port/StreamSettings reflect the externally reachable master
 // when applicable. Covers both fallback mechanisms:

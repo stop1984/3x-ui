@@ -75,7 +75,7 @@ func (s *SubJsonService) GetJson(subId string, host string) (string, string, err
 	seenEmails := make(map[string]struct{})
 	// Prepare Inbounds
 	for _, inbound := range inbounds {
-		clients, err := s.inboundService.GetClients(inbound)
+		clients, err := s.SubService.boundSubClients(inbound, subId)
 		if err != nil {
 			logger.Error("SubJsonService - GetClients: Unable to get clients from inbound")
 		}
@@ -85,10 +85,8 @@ func (s *SubJsonService) GetJson(subId string, host string) (string, string, err
 		s.SubService.projectThroughFallbackMaster(inbound)
 
 		for _, client := range clients {
-			if client.SubID == subId {
-				seenEmails[client.Email] = struct{}{}
-				configArray = append(configArray, s.getConfig(inbound, client, host)...)
-			}
+			seenEmails[client.Email] = struct{}{}
+			configArray = append(configArray, s.getConfig(inbound, client, host)...)
 		}
 	}
 

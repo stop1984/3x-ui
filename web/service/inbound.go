@@ -1484,26 +1484,15 @@ func (s *InboundService) getClientPrimaryKey(protocol model.Protocol, client mod
 	}
 }
 
-func (s *InboundService) writeBackClientSubID(sourceInboundID int, sourceProtocol model.Protocol, client model.Client, subID string) (bool, error) {
-	client.SubID = subID
-	client.UpdatedAt = time.Now().UnixMilli()
-	clientID := s.getClientPrimaryKey(sourceProtocol, client)
-	if clientID == "" {
-		return false, common.NewError("empty client ID")
+func (s *InboundService) writeBackClientSubID(client model.Client, subID string) (bool, error) {
+	if strings.TrimSpace(client.Email) == "" {
+		return false, common.NewError("client email is required")
 	}
-
-	settingsBytes, err := json.Marshal(map[string][]model.Client{
-		"clients": {client},
+	needRestart, _, err := s.clientService.mutateByEmail(s, client.Email, func(target *model.Client) error {
+		target.SubID = subID
+		return nil
 	})
-	if err != nil {
-		return false, err
-	}
-
-	updatePayload := &model.Inbound{
-		Id:       sourceInboundID,
-		Settings: string(settingsBytes),
-	}
-	return s.clientService.UpdateInboundClient(s, updatePayload, clientID)
+	return needRestart, err
 }
 
 func (s *InboundService) generateRandomCredential(targetProtocol model.Protocol) string {
@@ -1623,7 +1612,7 @@ func (s *InboundService) CopyInboundClients(targetInboundID int, sourceInboundID
 
 		if sourceClient.SubID == "" {
 			newSubID := uuid.NewString()
-			subNeedRestart, subErr := s.writeBackClientSubID(sourceInbound.Id, sourceInbound.Protocol, sourceClient, newSubID)
+			subNeedRestart, subErr := s.writeBackClientSubID(sourceClient, newSubID)
 			if subErr != nil {
 				result.Errors = append(result.Errors, fmt.Sprintf("%s: failed to write source subId: %v", originalEmail, subErr))
 				continue
@@ -3050,6 +3039,21 @@ func (s *InboundService) GetClientInboundByEmail(email string) (traffic *xray.Cl
 		}
 	}
 	return traffic, inbound, err
+}
+
+func (s *InboundService) GetClientEmailsForInboundSubID(inboundID int, subID string) ([]string, error) {
+	db := database.GetDB()
+	var emails []string
+	err := db.Table("client_inbounds").
+		Select("clients.email").
+		Joins("JOIN clients ON clients.id = client_inbounds.client_id").
+		Where("client_inbounds.inbound_id = ? AND clients.sub_id = ?", inboundID, subID).
+		Order("clients.id ASC").
+		Pluck("clients.email", &emails).Error
+	if err != nil {
+		return nil, err
+	}
+	return emails, nil
 }
 
 func (s *InboundService) GetClientByEmail(clientEmail string) (*xray.ClientTraffic, *model.Client, error) {
