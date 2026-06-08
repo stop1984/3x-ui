@@ -138,6 +138,7 @@ func (s *XrayService) GetXrayConfig() (*xray.Config, error) {
 		for _, clientTraffic := range clientStats {
 			enableMap[clientTraffic.Email] = clientTraffic.Enable
 		}
+		flowCapable := inboundCanEnableTlsFlow(string(inbound.Protocol), inbound.StreamSettings)
 
 		var finalClients []any
 		for i := range dbClients {
@@ -159,7 +160,7 @@ func (s *XrayService) GetXrayConfig() (*xray.Config, error) {
 				if c.ID != "" {
 					entry["id"] = c.ID
 				}
-				if flow != "" {
+				if flowCapable && flow != "" {
 					entry["flow"] = flow
 				}
 				if c.Reverse != nil {
@@ -175,9 +176,6 @@ func (s *XrayService) GetXrayConfig() (*xray.Config, error) {
 			case model.Trojan:
 				if c.Password != "" {
 					entry["password"] = c.Password
-				}
-				if flow != "" {
-					entry["flow"] = flow
 				}
 			case model.Shadowsocks:
 				if c.Password != "" {

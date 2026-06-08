@@ -568,6 +568,65 @@ func inboundCanEnableTlsFlow(protocol, streamSettings string) bool {
 	return stream.Security == "tls" || stream.Security == "reality"
 }
 
+// sanitizeInboundClientFlowSettings keeps settings.clients[].flow and the
+// VLESS-only testseed field aligned with the transport that is actually
+// configured on the inbound. Without this, switching an inbound away from
+// VLESS/TCP/(TLS|REALITY) can leave stale flow/testseed state in the DB,
+// runtime config, and subscriptions.
+func sanitizeInboundClientFlowSettings(protocol model.Protocol, streamSettings, settings string) (string, bool, error) {
+	if strings.TrimSpace(settings) == "" {
+		return settings, false, nil
+	}
+
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(settings), &parsed); err != nil {
+		return settings, false, err
+	}
+
+	rawClients, ok := parsed["clients"].([]any)
+	if !ok {
+		rawClients = nil
+	}
+
+	flowCapable := inboundCanEnableTlsFlow(string(protocol), streamSettings)
+	changed := false
+	hasVisionFlow := false
+
+	for _, raw := range rawClients {
+		clientMap, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		flow, _ := clientMap["flow"].(string)
+		if flow == "xtls-rprx-vision" {
+			hasVisionFlow = true
+		}
+		if protocol != model.VLESS || !flowCapable {
+			if flow != "" {
+				clientMap["flow"] = ""
+				changed = true
+			}
+		}
+	}
+
+	if protocol != model.VLESS || !flowCapable || !hasVisionFlow {
+		if _, exists := parsed["testseed"]; exists {
+			delete(parsed, "testseed")
+			changed = true
+		}
+	}
+
+	if !changed {
+		return settings, false, nil
+	}
+	parsed["clients"] = rawClients
+	out, err := json.MarshalIndent(parsed, "", "  ")
+	if err != nil {
+		return settings, false, err
+	}
+	return string(out), true, nil
+}
+
 // inboundCanHostFallbacks gates the settings.fallbacks injection.
 // Xray only honors fallbacks on VLESS and Trojan inbounds carried over
 // TCP transport with TLS or Reality security.
@@ -771,6 +830,11 @@ func (s *InboundService) AddInbound(inbound *model.Inbound) (*model.Inbound, boo
 	// Normalize streamSettings based on protocol
 	s.normalizeStreamSettings(inbound)
 	s.normalizeMtprotoSecret(inbound)
+	if sanitized, changed, err2 := sanitizeInboundClientFlowSettings(inbound.Protocol, inbound.StreamSettings, inbound.Settings); err2 != nil {
+		return inbound, false, err2
+	} else if changed {
+		inbound.Settings = sanitized
+	}
 
 	conflict, err := s.checkPortConflict(inbound, 0)
 	if err != nil {
@@ -1087,6 +1151,11 @@ func (s *InboundService) UpdateInbound(inbound *model.Inbound) (*model.Inbound, 
 	// Normalize streamSettings based on protocol
 	s.normalizeStreamSettings(inbound)
 	s.normalizeMtprotoSecret(inbound)
+	if sanitized, changed, err2 := sanitizeInboundClientFlowSettings(inbound.Protocol, inbound.StreamSettings, inbound.Settings); err2 != nil {
+		return inbound, false, err2
+	} else if changed {
+		inbound.Settings = sanitized
+	}
 
 	conflict, err := s.checkPortConflict(inbound, inbound.Id)
 	if err != nil {
@@ -1223,7 +1292,7 @@ func (s *InboundService) UpdateInbound(inbound *model.Inbound) (*model.Inbound, 
 			oldSnapshot := *oldInbound
 			oldSnapshot.Tag = tag
 			if err2 := rt.DelInbound(context.Background(), &oldSnapshot); err2 == nil {
-				logger.Debug("Old inbound deleted on", rt.Name(), ":", tag)
+				logger.Debug("Old inbound deleted on", rt.Name(), ":", oldSnapshot.Tag)
 			}
 			if inbound.Enable {
 				runtimeInbound, err2 := s.buildRuntimeInboundForAPI(tx, oldInbound)
@@ -3802,6 +3871,19 @@ func (s *InboundService) MigrationRequirements() {
 			}
 			settings["clients"] = newClients
 
+			settingsBytes, marshalErr := json.Marshal(settings)
+			if marshalErr != nil {
+				return
+			}
+			sanitized, changed, sanitizeErr := sanitizeInboundClientFlowSettings(
+				inbounds[inbound_index].Protocol,
+				inbounds[inbound_index].StreamSettings,
+				string(settingsBytes),
+			)
+			if sanitizeErr == nil && changed {
+				inbounds[inbound_index].Settings = sanitized
+				goto sync_clients
+			}
 			// Drop orphaned testseed: VLESS-only field, only meaningful when at least
 			// one client uses the exact xtls-rprx-vision flow. Older versions saved it
 			// for any non-empty flow (including the UDP variant) or kept it after the
@@ -3818,6 +3900,7 @@ func (s *InboundService) MigrationRequirements() {
 			inbounds[inbound_index].Settings = string(modifiedSettings)
 		}
 
+	sync_clients:
 		// Add client traffic row for all clients which has email
 		modelClients, err := s.GetClients(inbounds[inbound_index])
 		if err != nil {
