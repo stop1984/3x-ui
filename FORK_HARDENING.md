@@ -148,7 +148,7 @@ Effect:
 - no more “first inbound wins” behavior for these operations,
 - frontend no longer needs to ship full client payloads just to toggle `enable`.
 
-### `TBD` - Use canonical sub membership for subscription generation
+### `2bf07589` - Use canonical sub membership for subscription generation
 
 Problem:
 
@@ -216,7 +216,7 @@ Live deployment verification:
 At the time of writing, the local host has already deployed the patched binary
 through commit:
 
-- `0519fbfe`
+- `2bf07589`
 
 Local live binary:
 
@@ -224,7 +224,7 @@ Local live binary:
 
 Rollback artifact for the latest rollout:
 
-- `/root/backups/20260608T214959Z_xui_fork_patch_deploy_5`
+- `/root/backups/20260608T222057Z_xui_fork_patch_deploy_6`
 
 If this file is later pushed to GitHub, this section can be kept or trimmed;
 the commit history above is the important public part.
