@@ -522,6 +522,16 @@ export const sections: readonly Section[] = [
       },
       {
         method: 'POST',
+        path: '/panel/api/clients/setEnable/:email',
+        summary: 'Flip only the enable flag for one client. Unlike /update, this endpoint never requires the full client payload and applies the change across every attached inbound.',
+        params: [
+          { name: 'email', in: 'path', type: 'string', desc: 'Current client email (unique identifier).' },
+        ],
+        body: '{\n  "enable": false\n}',
+        response: '{\n  "success": true,\n  "msg": "Client updated"\n}',
+      },
+      {
+        method: 'POST',
         path: '/panel/api/clients/del/:email',
         summary: 'Delete a client by email. Removes it from every attached inbound and drops its traffic record unless keepTraffic=1 is passed.',
         params: [

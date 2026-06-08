@@ -1467,6 +1467,34 @@ func (s *ClientService) UpdateByEmail(inboundSvc *InboundService, email string, 
 	return s.Update(inboundSvc, rec.Id, updated, inboundFilter...)
 }
 
+// mutateByEmail loads the shared client record once, applies the caller's
+// mutation to the canonical client shape, and then fans the update out across
+// every attached inbound via Update(). This keeps single-field edits
+// (enable/limit/tgId/expiry/traffic cap) consistent for multi-attach clients
+// instead of mutating whichever inbound happened to be returned first.
+func (s *ClientService) mutateByEmail(
+	inboundSvc *InboundService,
+	email string,
+	mutate func(*model.Client) error,
+) (bool, *model.Client, error) {
+	if strings.TrimSpace(email) == "" {
+		return false, nil, common.NewError("client email is required")
+	}
+	rec, err := s.GetRecordByEmail(nil, email)
+	if err != nil {
+		return false, nil, err
+	}
+	client := rec.ToClient()
+	if err := mutate(client); err != nil {
+		return false, nil, err
+	}
+	needRestart, err := s.Update(inboundSvc, rec.Id, *client)
+	if err != nil {
+		return needRestart, nil, err
+	}
+	return needRestart, client, nil
+}
+
 func (s *ClientService) ResetTrafficByEmail(inboundSvc *InboundService, email string) (bool, error) {
 	if email == "" {
 		return false, common.NewError("client email is required")
@@ -4320,147 +4348,31 @@ func (s *ClientService) SetClientTelegramUserID(inboundSvc *InboundService, traf
 	}
 
 	clientEmail := traffic.Email
-
-	oldClients, err := inboundSvc.GetClients(inbound)
-	if err != nil {
-		return false, err
-	}
-
-	clientId := ""
-
-	for _, oldClient := range oldClients {
-		if oldClient.Email == clientEmail {
-			switch inbound.Protocol {
-			case "trojan":
-				clientId = oldClient.Password
-			case "shadowsocks":
-				clientId = oldClient.Email
-			default:
-				clientId = oldClient.ID
-			}
-			break
-		}
-	}
-
-	if len(clientId) == 0 {
-		return false, common.NewError("Client Not Found For Email:", clientEmail)
-	}
-
-	var settings map[string]any
-	err = json.Unmarshal([]byte(inbound.Settings), &settings)
-	if err != nil {
-		return false, err
-	}
-	clients := settings["clients"].([]any)
-	var newClients []any
-	for client_index := range clients {
-		c := clients[client_index].(map[string]any)
-		if c["email"] == clientEmail {
-			c["tgId"] = tgId
-			c["updated_at"] = time.Now().Unix() * 1000
-			newClients = append(newClients, any(c))
-		}
-	}
-	settings["clients"] = newClients
-	modifiedSettings, err := json.MarshalIndent(settings, "", "  ")
-	if err != nil {
-		return false, err
-	}
-	inbound.Settings = string(modifiedSettings)
-	needRestart, err := s.UpdateInboundClient(inboundSvc, inbound, clientId)
+	needRestart, _, err := s.mutateByEmail(inboundSvc, clientEmail, func(client *model.Client) error {
+		client.TgID = tgId
+		return nil
+	})
 	return needRestart, err
 }
 
 func (s *ClientService) checkIsEnabledByEmail(inboundSvc *InboundService, clientEmail string) (bool, error) {
-	_, inbound, err := inboundSvc.GetClientInboundByEmail(clientEmail)
+	rec, err := s.GetRecordByEmail(nil, clientEmail)
 	if err != nil {
 		return false, err
 	}
-	if inbound == nil {
-		return false, common.NewError("Inbound Not Found For Email:", clientEmail)
-	}
-
-	clients, err := inboundSvc.GetClients(inbound)
-	if err != nil {
-		return false, err
-	}
-
-	isEnable := false
-
-	for _, client := range clients {
-		if client.Email == clientEmail {
-			isEnable = client.Enable
-			break
-		}
-	}
-
-	return isEnable, err
+	return rec.Enable, nil
 }
 
 func (s *ClientService) ToggleClientEnableByEmail(inboundSvc *InboundService, clientEmail string) (bool, bool, error) {
-	_, inbound, err := inboundSvc.GetClientInboundByEmail(clientEmail)
+	current, err := s.checkIsEnabledByEmail(inboundSvc, clientEmail)
 	if err != nil {
 		return false, false, err
 	}
-	if inbound == nil {
-		return false, false, common.NewError("Inbound Not Found For Email:", clientEmail)
-	}
-
-	oldClients, err := inboundSvc.GetClients(inbound)
-	if err != nil {
-		return false, false, err
-	}
-
-	clientId := ""
-	clientOldEnabled := false
-
-	for _, oldClient := range oldClients {
-		if oldClient.Email == clientEmail {
-			switch inbound.Protocol {
-			case "trojan":
-				clientId = oldClient.Password
-			case "shadowsocks":
-				clientId = oldClient.Email
-			default:
-				clientId = oldClient.ID
-			}
-			clientOldEnabled = oldClient.Enable
-			break
-		}
-	}
-
-	if len(clientId) == 0 {
-		return false, false, common.NewError("Client Not Found For Email:", clientEmail)
-	}
-
-	var settings map[string]any
-	err = json.Unmarshal([]byte(inbound.Settings), &settings)
-	if err != nil {
-		return false, false, err
-	}
-	clients := settings["clients"].([]any)
-	var newClients []any
-	for client_index := range clients {
-		c := clients[client_index].(map[string]any)
-		if c["email"] == clientEmail {
-			c["enable"] = !clientOldEnabled
-			c["updated_at"] = time.Now().Unix() * 1000
-			newClients = append(newClients, any(c))
-		}
-	}
-	settings["clients"] = newClients
-	modifiedSettings, err := json.MarshalIndent(settings, "", "  ")
-	if err != nil {
-		return false, false, err
-	}
-	inbound.Settings = string(modifiedSettings)
-
-	needRestart, err := s.UpdateInboundClient(inboundSvc, inbound, clientId)
+	newEnabled, needRestart, err := s.SetClientEnableByEmail(inboundSvc, clientEmail, !current)
 	if err != nil {
 		return false, needRestart, err
 	}
-
-	return !clientOldEnabled, needRestart, nil
+	return newEnabled, needRestart, nil
 }
 
 func (s *ClientService) SetClientEnableByEmail(inboundSvc *InboundService, clientEmail string, enable bool) (bool, bool, error) {
@@ -4469,130 +4381,31 @@ func (s *ClientService) SetClientEnableByEmail(inboundSvc *InboundService, clien
 		return false, false, err
 	}
 	if current == enable {
-		return false, false, nil
+		return current, false, nil
 	}
-	newEnabled, needRestart, err := s.ToggleClientEnableByEmail(inboundSvc, clientEmail)
+	needRestart, client, err := s.mutateByEmail(inboundSvc, clientEmail, func(client *model.Client) error {
+		client.Enable = enable
+		return nil
+	})
 	if err != nil {
 		return false, needRestart, err
 	}
-	return newEnabled == enable, needRestart, nil
+	return client.Enable, needRestart, nil
 }
 
 func (s *ClientService) ResetClientIpLimitByEmail(inboundSvc *InboundService, clientEmail string, count int) (bool, error) {
-	_, inbound, err := inboundSvc.GetClientInboundByEmail(clientEmail)
-	if err != nil {
-		return false, err
-	}
-	if inbound == nil {
-		return false, common.NewError("Inbound Not Found For Email:", clientEmail)
-	}
-
-	oldClients, err := inboundSvc.GetClients(inbound)
-	if err != nil {
-		return false, err
-	}
-
-	clientId := ""
-
-	for _, oldClient := range oldClients {
-		if oldClient.Email == clientEmail {
-			switch inbound.Protocol {
-			case "trojan":
-				clientId = oldClient.Password
-			case "shadowsocks":
-				clientId = oldClient.Email
-			default:
-				clientId = oldClient.ID
-			}
-			break
-		}
-	}
-
-	if len(clientId) == 0 {
-		return false, common.NewError("Client Not Found For Email:", clientEmail)
-	}
-
-	var settings map[string]any
-	err = json.Unmarshal([]byte(inbound.Settings), &settings)
-	if err != nil {
-		return false, err
-	}
-	clients := settings["clients"].([]any)
-	var newClients []any
-	for client_index := range clients {
-		c := clients[client_index].(map[string]any)
-		if c["email"] == clientEmail {
-			c["limitIp"] = count
-			c["updated_at"] = time.Now().Unix() * 1000
-			newClients = append(newClients, any(c))
-		}
-	}
-	settings["clients"] = newClients
-	modifiedSettings, err := json.MarshalIndent(settings, "", "  ")
-	if err != nil {
-		return false, err
-	}
-	inbound.Settings = string(modifiedSettings)
-	needRestart, err := s.UpdateInboundClient(inboundSvc, inbound, clientId)
+	needRestart, _, err := s.mutateByEmail(inboundSvc, clientEmail, func(client *model.Client) error {
+		client.LimitIP = count
+		return nil
+	})
 	return needRestart, err
 }
 
 func (s *ClientService) ResetClientExpiryTimeByEmail(inboundSvc *InboundService, clientEmail string, expiry_time int64) (bool, error) {
-	_, inbound, err := inboundSvc.GetClientInboundByEmail(clientEmail)
-	if err != nil {
-		return false, err
-	}
-	if inbound == nil {
-		return false, common.NewError("Inbound Not Found For Email:", clientEmail)
-	}
-
-	oldClients, err := inboundSvc.GetClients(inbound)
-	if err != nil {
-		return false, err
-	}
-
-	clientId := ""
-
-	for _, oldClient := range oldClients {
-		if oldClient.Email == clientEmail {
-			switch inbound.Protocol {
-			case "trojan":
-				clientId = oldClient.Password
-			case "shadowsocks":
-				clientId = oldClient.Email
-			default:
-				clientId = oldClient.ID
-			}
-			break
-		}
-	}
-
-	if len(clientId) == 0 {
-		return false, common.NewError("Client Not Found For Email:", clientEmail)
-	}
-
-	var settings map[string]any
-	err = json.Unmarshal([]byte(inbound.Settings), &settings)
-	if err != nil {
-		return false, err
-	}
-	clients := settings["clients"].([]any)
-	var newClients []any
-	for client_index := range clients {
-		c := clients[client_index].(map[string]any)
-		if c["email"] == clientEmail {
-			c["expiryTime"] = expiry_time
-			c["updated_at"] = time.Now().Unix() * 1000
-			newClients = append(newClients, any(c))
-		}
-	}
-	settings["clients"] = newClients
-	modifiedSettings, err := json.MarshalIndent(settings, "", "  ")
-	if err != nil {
-		return false, err
-	}
-	inbound.Settings = string(modifiedSettings)
-	needRestart, err := s.UpdateInboundClient(inboundSvc, inbound, clientId)
+	needRestart, _, err := s.mutateByEmail(inboundSvc, clientEmail, func(client *model.Client) error {
+		client.ExpiryTime = expiry_time
+		return nil
+	})
 	return needRestart, err
 }
 
@@ -4600,60 +4413,9 @@ func (s *ClientService) ResetClientTrafficLimitByEmail(inboundSvc *InboundServic
 	if totalGB < 0 {
 		return false, common.NewError("totalGB must be >= 0")
 	}
-	_, inbound, err := inboundSvc.GetClientInboundByEmail(clientEmail)
-	if err != nil {
-		return false, err
-	}
-	if inbound == nil {
-		return false, common.NewError("Inbound Not Found For Email:", clientEmail)
-	}
-
-	oldClients, err := inboundSvc.GetClients(inbound)
-	if err != nil {
-		return false, err
-	}
-
-	clientId := ""
-
-	for _, oldClient := range oldClients {
-		if oldClient.Email == clientEmail {
-			switch inbound.Protocol {
-			case "trojan":
-				clientId = oldClient.Password
-			case "shadowsocks":
-				clientId = oldClient.Email
-			default:
-				clientId = oldClient.ID
-			}
-			break
-		}
-	}
-
-	if len(clientId) == 0 {
-		return false, common.NewError("Client Not Found For Email:", clientEmail)
-	}
-
-	var settings map[string]any
-	err = json.Unmarshal([]byte(inbound.Settings), &settings)
-	if err != nil {
-		return false, err
-	}
-	clients := settings["clients"].([]any)
-	var newClients []any
-	for client_index := range clients {
-		c := clients[client_index].(map[string]any)
-		if c["email"] == clientEmail {
-			c["totalGB"] = totalGB * 1024 * 1024 * 1024
-			c["updated_at"] = time.Now().Unix() * 1000
-			newClients = append(newClients, any(c))
-		}
-	}
-	settings["clients"] = newClients
-	modifiedSettings, err := json.MarshalIndent(settings, "", "  ")
-	if err != nil {
-		return false, err
-	}
-	inbound.Settings = string(modifiedSettings)
-	needRestart, err := s.UpdateInboundClient(inboundSvc, inbound, clientId)
+	needRestart, _, err := s.mutateByEmail(inboundSvc, clientEmail, func(client *model.Client) error {
+		client.TotalGB = int64(totalGB) * 1024 * 1024 * 1024
+		return nil
+	})
 	return needRestart, err
 }
