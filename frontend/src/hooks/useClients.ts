@@ -150,6 +150,7 @@ async function fetchDefaults(): Promise<Record<string, unknown>> {
 
 export function useClients() {
   const queryClient = useQueryClient();
+  const invalidateTimerRef = useRef<number | null>(null);
 
   const [query, setQueryState] = useState<ClientQueryParams>(DEFAULT_QUERY);
   // setQuery shallow-compares so callers can pass a fresh object every render
@@ -517,9 +518,30 @@ export function useClients() {
     });
   }, [queryClient]);
 
+  const applyInvalidate = useCallback((payload: unknown) => {
+    if (!payload || typeof payload !== 'object') return;
+    const p = payload as { type?: string };
+    if (p.type !== 'inbounds' && p.type !== 'clients') return;
+    if (invalidateTimerRef.current != null) window.clearTimeout(invalidateTimerRef.current);
+    invalidateTimerRef.current = window.setTimeout(() => {
+      invalidateTimerRef.current = null;
+      setAllClientStats([]);
+      void queryClient.invalidateQueries({ queryKey: keys.clients.root() });
+      if (p.type === 'inbounds') {
+        void queryClient.invalidateQueries({ queryKey: keys.inbounds.root() });
+      }
+    }, 200);
+  }, [queryClient]);
+
   useEffect(() => {
     queryRef.current = query;
   }, [query]);
+
+  useEffect(() => () => {
+    if (invalidateTimerRef.current != null) {
+      window.clearTimeout(invalidateTimerRef.current);
+    }
+  }, []);
 
   return {
     clients,
@@ -560,5 +582,6 @@ export function useClients() {
     setEnable,
     applyTrafficEvent,
     applyClientStatsEvent,
+    applyInvalidate,
   };
 }
