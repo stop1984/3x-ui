@@ -2976,19 +2976,43 @@ func (s *InboundService) GetClientInboundByTrafficID(trafficId int) (traffic *xr
 	}
 	traffic = traffics[0]
 
+	inbound, err = s.findAttachedInboundByEmail(db, traffic.Email)
+	if err == nil && inbound != nil {
+		return traffic, inbound, nil
+	}
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return traffic, nil, err
+	}
+
 	inbound, err = s.GetInbound(traffic.InboundId)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		// client_traffics.inbound_id goes stale when an inbound is deleted and
-		// recreated; fall back to the authoritative client_inbounds link by email.
-		ids, idErr := s.clientService.GetInboundIdsForEmail(db, traffic.Email)
-		if idErr != nil {
-			return traffic, nil, idErr
+	return traffic, inbound, err
+}
+
+func (s *InboundService) findAttachedInboundByEmail(db *gorm.DB, email string) (*model.Inbound, error) {
+	rec, recErr := s.clientService.GetRecordByEmail(db, email)
+	if recErr != nil {
+		return nil, recErr
+	}
+	inboundIDs, idsErr := s.clientService.GetInboundIdsForRecord(rec.Id)
+	if idsErr != nil {
+		return nil, idsErr
+	}
+	for _, inboundID := range inboundIDs {
+		candidate, getErr := s.GetInbound(inboundID)
+		if getErr != nil {
+			continue
 		}
-		if len(ids) > 0 {
-			inbound, err = s.GetInbound(ids[0])
+		clients, getErr := s.GetClients(candidate)
+		if getErr != nil {
+			continue
+		}
+		for i := range clients {
+			if clients[i].Email == email {
+				return candidate, nil
+			}
 		}
 	}
-	return traffic, inbound, err
+	return nil, gorm.ErrRecordNotFound
 }
 
 func (s *InboundService) GetClientInboundByEmail(email string) (traffic *xray.ClientTraffic, inbound *model.Inbound, err error) {
@@ -3003,27 +3027,12 @@ func (s *InboundService) GetClientInboundByEmail(email string) (traffic *xray.Cl
 		return nil, nil, err
 	}
 
-	rec, recErr := s.clientService.GetRecordByEmail(nil, email)
-	if recErr == nil {
-		inboundIDs, idsErr := s.clientService.GetInboundIdsForRecord(rec.Id)
-		if idsErr != nil {
-			return nil, nil, idsErr
-		}
-		for _, inboundID := range inboundIDs {
-			candidate, getErr := s.GetInbound(inboundID)
-			if getErr != nil {
-				continue
-			}
-			clients, getErr := s.GetClients(candidate)
-			if getErr != nil {
-				continue
-			}
-			for i := range clients {
-				if clients[i].Email == email {
-					return traffic, candidate, nil
-				}
-			}
-		}
+	inbound, err = s.findAttachedInboundByEmail(db, email)
+	if err == nil && inbound != nil {
+		return traffic, inbound, nil
+	}
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return traffic, nil, err
 	}
 
 	inbound, err = s.GetInbound(traffic.InboundId)

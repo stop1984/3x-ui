@@ -662,3 +662,62 @@ func TestGetClientByEmailSkipsStaleTrafficOwnerInbound(t *testing.T) {
 		t.Fatalf("client subId = %q, want %q", gotClient.SubID, client.SubID)
 	}
 }
+
+func TestGetClientInboundByTrafficIDSkipsStaleTrafficOwnerInbound(t *testing.T) {
+	setupClientMutationDB(t)
+
+	client := model.Client{
+		ID:         "ab2ee76f-ac28-4288-9d61-8529749b9221",
+		Email:      "lookup-traffic@example.com",
+		SubID:      "sub-lookup-traffic",
+		Enable:     true,
+		LimitIP:    1,
+		TotalGB:    1024,
+		ExpiryTime: 4102444800000,
+	}
+	ib1 := seedClientMutationInbound(t, "vless-lookup-traffic-a", 29443, client)
+	ib2 := seedClientMutationInbound(t, "vless-lookup-traffic-b", 30443, client)
+
+	inboundSvc := &InboundService{}
+	clientSvc := &ClientService{}
+	if err := clientSvc.SyncInbound(database.GetDB(), ib1, []model.Client{client}); err != nil {
+		t.Fatalf("SyncInbound ib1: %v", err)
+	}
+	if err := clientSvc.SyncInbound(database.GetDB(), ib2, []model.Client{client}); err != nil {
+		t.Fatalf("SyncInbound ib2: %v", err)
+	}
+
+	traffic := &xray.ClientTraffic{
+		InboundId: ib1,
+		Email:     client.Email,
+		Enable:    true,
+		Up:        33,
+		Down:      44,
+	}
+	if err := database.GetDB().Create(traffic).Error; err != nil {
+		t.Fatalf("seed traffic: %v", err)
+	}
+
+	var stale model.Inbound
+	if err := database.GetDB().First(&stale, ib1).Error; err != nil {
+		t.Fatalf("load inbound %d: %v", ib1, err)
+	}
+	stale.Settings = `{"clients":[]}`
+	if err := database.GetDB().Save(&stale).Error; err != nil {
+		t.Fatalf("stale inbound %d: %v", ib1, err)
+	}
+
+	gotTraffic, gotInbound, err := inboundSvc.GetClientInboundByTrafficID(traffic.Id)
+	if err != nil {
+		t.Fatalf("GetClientInboundByTrafficID: %v", err)
+	}
+	if gotTraffic == nil || gotInbound == nil {
+		t.Fatalf("GetClientInboundByTrafficID returned nil traffic/inbound")
+	}
+	if gotTraffic.Email != client.Email {
+		t.Fatalf("traffic email = %q, want %q", gotTraffic.Email, client.Email)
+	}
+	if gotInbound.Id != ib2 {
+		t.Fatalf("inbound id = %d, want %d", gotInbound.Id, ib2)
+	}
+}
