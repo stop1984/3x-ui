@@ -324,6 +324,10 @@ And reset-traffic shared-client coverage under:
 
 - `web/service/client_multiattach_test.go`
 
+And reset prevalidation coverage under:
+
+- `web/service/client_multiattach_test.go`
+
 Live deployment verification:
 
 - replace `/usr/local/x-ui/x-ui` with the built binary,
@@ -337,7 +341,7 @@ Live deployment verification:
 At the time of writing, the local host has already deployed the patched binary
 through commit:
 
-- `cba23998`
+- `f60b738c`
 
 Local live binary:
 
@@ -345,7 +349,7 @@ Local live binary:
 
 Rollback artifact for the latest rollout:
 
-- `/root/backups/20260609T062201Z_xui_fork_patch_deploy_11`
+- `/root/backups/20260609T062603Z_xui_fork_patch_deploy_12`
 
 If this file is later pushed to GitHub, this section can be kept or trimmed;
 the commit history above is the important public part.
@@ -360,20 +364,23 @@ the commit history above is the important public part.
 - rollback-safe delete behavior when a later attached inbound fails mid-delete,
 - tombstones only after successful delete instead of on failed partial delete,
 - reset-traffic now uses the explicitly requested inbound instead of whichever
-  stale inbound happened to own the shared `ClientTraffic.InboundId` row.
+  stale inbound happened to own the shared `ClientTraffic.InboundId` row,
+- multi-attach traffic reset now prevalidates every attached inbound before the
+  first reset, so a corrupt later attachment cannot partially reset traffic.
 
 ## Known Limits / Not Yet Closed
 
 These areas still deserve audit:
 
-1. remaining multi-step reset flows that can still partially apply,
+1. remaining reset flows where runtime-side effects can still drift from DB state,
 2. remaining round-trip mismatches for exotic transport fields,
 3. any path that still treats the first matching inbound as authoritative for a
    shared client identity.
 
 ## Recommended Next Steps
 
-1. Audit remaining multi-step reset flows for the same partial-apply class.
+1. Audit remaining reset flows where one runtime-side effect can succeed before
+   a later attachment fails.
 2. Compare `DB -> config.json -> links/sub` after inbound edits and fix the
    next concrete drift, not broad abstractions.
 3. Keep pushing backend-safe narrow endpoints where the UI currently relies on
