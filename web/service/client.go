@@ -81,6 +81,11 @@ func clientKeyForProtocol(p model.Protocol, rec *model.ClientRecord) string {
 
 type ClientService struct{}
 
+type updatedInboundStep struct {
+	inboundId   int
+	currentKey string
+}
+
 // Short-lived tombstone of just-deleted client emails so that a node snapshot
 // arriving between delete and node-side processing doesn't resurrect them.
 var (
@@ -833,6 +838,7 @@ func (s *ClientService) Update(inboundSvc *InboundService, id int, updated model
 	if err != nil {
 		return false, err
 	}
+	oldClient := existing.ToClient()
 	inboundIds, err := s.GetInboundIdsForRecord(id)
 	if err != nil {
 		return false, err
@@ -870,8 +876,9 @@ func (s *ClientService) Update(inboundSvc *InboundService, id int, updated model
 	if updated.CreatedAt == 0 {
 		updated.CreatedAt = existing.CreatedAt
 	}
+	emailChanged := updated.Email != existing.Email
 
-	if updated.Email != existing.Email {
+	if emailChanged {
 		var collisionCount int64
 		if err := database.GetDB().Model(&model.ClientRecord{}).
 			Where("email = ? AND id <> ?", updated.Email, id).
@@ -901,6 +908,28 @@ func (s *ClientService) Update(inboundSvc *InboundService, id int, updated model
 	}
 
 	needRestart := false
+	updatedNow := make([]updatedInboundStep, 0, len(inboundIds))
+	rollbackUpdate := func(cause error) (bool, error) {
+		rollbackErrs := make([]string, 0, 2)
+		if emailChanged {
+			if err := database.GetDB().Model(&model.ClientRecord{}).
+				Where("id = ?", id).
+				Update("email", existing.Email).Error; err != nil {
+				rollbackErrs = append(rollbackErrs, "email: "+err.Error())
+			}
+		}
+		if len(updatedNow) > 0 {
+			if rollbackNeedRestart, rollbackErr := s.rollbackUpdate(inboundSvc, oldClient, updatedNow); rollbackErr != nil {
+				rollbackErrs = append(rollbackErrs, "inbounds: "+rollbackErr.Error())
+			} else if rollbackNeedRestart {
+				needRestart = true
+			}
+		}
+		if len(rollbackErrs) > 0 {
+			return needRestart, fmt.Errorf("update failed: %w (rollback failed: %s)", cause, strings.Join(rollbackErrs, "; "))
+		}
+		return needRestart, cause
+	}
 	for _, ibId := range inboundIds {
 		inbound, getErr := inboundSvc.GetInbound(ibId)
 		if getErr != nil {
@@ -918,23 +947,26 @@ func (s *ClientService) Update(inboundSvc *InboundService, id int, updated model
 		if oldKey == "" {
 			continue
 		}
-		if err := s.fillProtocolDefaults(&updated, inbound); err != nil {
-			return needRestart, err
+		candidate := updated
+		if err := s.fillProtocolDefaults(&candidate, inbound); err != nil {
+			return rollbackUpdate(err)
 		}
-		settingsPayload, mErr := json.Marshal(map[string][]model.Client{"clients": {clientWithInboundFlow(updated, inbound)}})
+		settingsPayload, mErr := json.Marshal(map[string][]model.Client{"clients": {clientWithInboundFlow(candidate, inbound)}})
 		if mErr != nil {
-			return needRestart, mErr
+			return rollbackUpdate(mErr)
 		}
 		nr, upErr := s.UpdateInboundClient(inboundSvc, &model.Inbound{
 			Id:       ibId,
 			Settings: string(settingsPayload),
 		}, oldKey)
 		if upErr != nil {
-			return needRestart, upErr
+			return rollbackUpdate(upErr)
 		}
 		if nr {
 			needRestart = true
 		}
+		candidateRec := candidate.ToRecord()
+		updatedNow = append(updatedNow, updatedInboundStep{inboundId: ibId, currentKey: clientKeyForProtocol(inbound.Protocol, candidateRec)})
 	}
 
 	reverseStr := ""
@@ -946,13 +978,43 @@ func (s *ClientService) Update(inboundSvc *InboundService, id int, updated model
 	if err := database.GetDB().Model(&model.ClientRecord{}).
 		Where("id = ?", id).
 		Update("reverse", reverseStr).Error; err != nil {
-		return needRestart, err
+		return rollbackUpdate(err)
 	}
 
 	if err := database.GetDB().Model(&model.ClientRecord{}).
 		Where("id = ?", id).
 		UpdateColumn("updated_at", time.Now().UnixMilli()).Error; err != nil {
-		return needRestart, err
+		return rollbackUpdate(err)
+	}
+	return needRestart, nil
+}
+
+func (s *ClientService) rollbackUpdate(inboundSvc *InboundService, oldClient *model.Client, updatedNow []updatedInboundStep) (bool, error) {
+	needRestart := false
+	for i := len(updatedNow) - 1; i >= 0; i-- {
+		step := updatedNow[i]
+		inbound, err := inboundSvc.GetInbound(step.inboundId)
+		if err != nil {
+			return needRestart, err
+		}
+		rollbackClient := *oldClient
+		if err := s.fillProtocolDefaults(&rollbackClient, inbound); err != nil {
+			return needRestart, err
+		}
+		settingsPayload, err := json.Marshal(map[string][]model.Client{"clients": {clientWithInboundFlow(rollbackClient, inbound)}})
+		if err != nil {
+			return needRestart, err
+		}
+		nr, err := s.UpdateInboundClient(inboundSvc, &model.Inbound{
+			Id:       step.inboundId,
+			Settings: string(settingsPayload),
+		}, step.currentKey)
+		if err != nil {
+			return needRestart, err
+		}
+		if nr {
+			needRestart = true
+		}
 	}
 	return needRestart, nil
 }

@@ -2985,7 +2985,22 @@ func (s *InboundService) GetClientInboundByTrafficID(trafficId int) (traffic *xr
 	}
 
 	inbound, err = s.GetInbound(traffic.InboundId)
-	return traffic, inbound, err
+	if err != nil {
+		return traffic, inbound, err
+	}
+	clients, err := s.GetClients(inbound)
+	if err != nil {
+		return traffic, nil, err
+	}
+	for i := range clients {
+		if clients[i].Email == traffic.Email {
+			return traffic, inbound, nil
+		}
+	}
+	// A legacy traffic owner row can outlive the inbound membership that once
+	// backed it. Do not return an unrelated inbound just because the row still
+	// points at a live inbound ID.
+	return traffic, nil, gorm.ErrRecordNotFound
 }
 
 func (s *InboundService) findAttachedInboundByEmail(db *gorm.DB, email string) (*model.Inbound, error) {
@@ -3045,7 +3060,19 @@ func (s *InboundService) GetClientInboundByEmail(email string) (traffic *xray.Cl
 	if err != nil {
 		return traffic, nil, err
 	}
-	return traffic, inbound, nil
+	clients, err := s.GetClients(inbound)
+	if err != nil {
+		return traffic, nil, err
+	}
+	for i := range clients {
+		if clients[i].Email == email {
+			return traffic, inbound, nil
+		}
+	}
+	// A legacy traffic owner row can outlive the inbound membership that once
+	// backed it. Do not return an unrelated inbound just because the row still
+	// points at a live inbound ID.
+	return traffic, nil, gorm.ErrRecordNotFound
 }
 
 func (s *InboundService) GetClientEmailsForInboundSubID(inboundID int, subID string) ([]string, error) {

@@ -265,6 +265,75 @@ func TestSaveByEmailRollsBackWhenAttachmentSyncFails(t *testing.T) {
 	}
 }
 
+func TestUpdateRollsBackWhenLaterInboundFails(t *testing.T) {
+	setupClientMutationDB(t)
+
+	client := model.Client{
+		ID:         "c913a6ae-faa6-4e59-9790-f3c92d85f6b3",
+		Email:      "update-rollback@example.com",
+		SubID:      "sub-update-rollback",
+		Enable:     true,
+		LimitIP:    1,
+		TotalGB:    1024,
+		ExpiryTime: 4102444800000,
+		Comment:    "before",
+	}
+	ib1 := seedClientMutationInbound(t, "vless-update-a", 14543, client)
+	ib2 := seedClientMutationInbound(t, "vless-update-b", 15543, client)
+
+	inboundSvc := &InboundService{}
+	clientSvc := &ClientService{}
+	if err := clientSvc.SyncInbound(database.GetDB(), ib1, []model.Client{client}); err != nil {
+		t.Fatalf("SyncInbound ib1: %v", err)
+	}
+	if err := clientSvc.SyncInbound(database.GetDB(), ib2, []model.Client{client}); err != nil {
+		t.Fatalf("SyncInbound ib2: %v", err)
+	}
+
+	var corrupt model.Inbound
+	if err := database.GetDB().First(&corrupt, ib2).Error; err != nil {
+		t.Fatalf("load inbound %d: %v", ib2, err)
+	}
+	corrupt.Settings = `{"clients":` // invalid JSON to force a later per-inbound update failure
+	if err := database.GetDB().Save(&corrupt).Error; err != nil {
+		t.Fatalf("corrupt inbound %d: %v", ib2, err)
+	}
+
+	rec, err := clientSvc.GetRecordByEmail(nil, client.Email)
+	if err != nil {
+		t.Fatalf("GetRecordByEmail: %v", err)
+	}
+
+	updated := client
+	updated.Email = "update-rollback-new@example.com"
+	updated.Comment = "after"
+
+	needRestart, err := clientSvc.Update(inboundSvc, rec.Id, updated)
+	if err == nil {
+		t.Fatalf("Update unexpectedly succeeded")
+	}
+	_ = needRestart
+
+	rolledBack, err := clientSvc.GetRecordByEmail(nil, client.Email)
+	if err != nil {
+		t.Fatalf("GetRecordByEmail rollback state: %v", err)
+	}
+	if rolledBack.Comment != "before" {
+		t.Fatalf("client record comment = %q, want rollback to %q", rolledBack.Comment, "before")
+	}
+	if _, err := clientSvc.GetRecordByEmail(nil, updated.Email); err == nil {
+		t.Fatalf("rollback left renamed client record %q behind", updated.Email)
+	}
+
+	c1 := inboundClientByEmail(t, ib1, client.Email)
+	if c1.Comment != "before" {
+		t.Fatalf("inbound %d comment = %q, want rollback to %q", ib1, c1.Comment, "before")
+	}
+	if inboundHasClientEmail(t, ib1, updated.Email) {
+		t.Fatalf("rollback left renamed client on inbound %d", ib1)
+	}
+}
+
 func TestAttachRollsBackWhenLaterInboundFails(t *testing.T) {
 	setupClientMutationDB(t)
 
@@ -719,6 +788,62 @@ func TestGetClientInboundByTrafficIDSkipsStaleTrafficOwnerInbound(t *testing.T) 
 	}
 	if gotInbound.Id != ib2 {
 		t.Fatalf("inbound id = %d, want %d", gotInbound.Id, ib2)
+	}
+}
+
+func TestGetClientInboundByEmailRejectsLegacyOwnerWithoutMembership(t *testing.T) {
+	setupClientMutationDB(t)
+
+	inboundID := seedClientMutationInboundClients(t, "vless-lookup-orphan-email", 31443, nil)
+	traffic := &xray.ClientTraffic{
+		InboundId: inboundID,
+		Email:     "orphan-lookup@example.com",
+		Enable:    true,
+		Up:        55,
+		Down:      66,
+	}
+	if err := database.GetDB().Create(traffic).Error; err != nil {
+		t.Fatalf("seed traffic: %v", err)
+	}
+
+	inboundSvc := &InboundService{}
+	gotTraffic, gotInbound, err := inboundSvc.GetClientInboundByEmail(traffic.Email)
+	if err == nil {
+		t.Fatalf("GetClientInboundByEmail should fail for stale legacy owner without membership")
+	}
+	if gotTraffic == nil {
+		t.Fatalf("GetClientInboundByEmail returned nil traffic")
+	}
+	if gotInbound != nil {
+		t.Fatalf("GetClientInboundByEmail should not return fallback inbound %d for stale membership", gotInbound.Id)
+	}
+}
+
+func TestGetClientInboundByTrafficIDRejectsLegacyOwnerWithoutMembership(t *testing.T) {
+	setupClientMutationDB(t)
+
+	inboundID := seedClientMutationInboundClients(t, "vless-lookup-orphan-traffic", 32443, nil)
+	traffic := &xray.ClientTraffic{
+		InboundId: inboundID,
+		Email:     "orphan-traffic@example.com",
+		Enable:    true,
+		Up:        77,
+		Down:      88,
+	}
+	if err := database.GetDB().Create(traffic).Error; err != nil {
+		t.Fatalf("seed traffic: %v", err)
+	}
+
+	inboundSvc := &InboundService{}
+	gotTraffic, gotInbound, err := inboundSvc.GetClientInboundByTrafficID(traffic.Id)
+	if err == nil {
+		t.Fatalf("GetClientInboundByTrafficID should fail for stale legacy owner without membership")
+	}
+	if gotTraffic == nil {
+		t.Fatalf("GetClientInboundByTrafficID returned nil traffic")
+	}
+	if gotInbound != nil {
+		t.Fatalf("GetClientInboundByTrafficID should not return fallback inbound %d for stale membership", gotInbound.Id)
 	}
 }
 
