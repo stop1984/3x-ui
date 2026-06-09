@@ -99,7 +99,7 @@ func TestGetSubsUsesCanonicalSubMembershipWhenInboundSubIDIsStale(t *testing.T) 
 	}
 
 	svc := NewSubService(false, "-ieo")
-	subs, _, _, err := svc.GetSubs(subID, "stub.example")
+	subs, _, _, _, err := svc.GetSubs(subID, "stub.example")
 	if err != nil {
 		t.Fatalf("GetSubs: %v", err)
 	}
