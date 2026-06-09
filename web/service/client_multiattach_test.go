@@ -536,3 +536,67 @@ func TestResetClientTrafficUsesRequestedInboundForMultiAttachClient(t *testing.T
 		t.Fatalf("traffic counters = up:%d down:%d, want 0/0", updated.Up, updated.Down)
 	}
 }
+
+func TestResetTrafficByEmailPrevalidatesAllAttachedInbounds(t *testing.T) {
+	setupClientMutationDB(t)
+
+	client := model.Client{
+		ID:         "1ddf9cd7-8487-4d7b-a712-faa8d8a6b028",
+		Email:      "reset-prevalidate@example.com",
+		SubID:      "sub-reset-prevalidate",
+		Enable:     true,
+		LimitIP:    1,
+		TotalGB:    1024,
+		ExpiryTime: 4102444800000,
+	}
+	ib1 := seedClientMutationInbound(t, "vless-reset-pre-a", 25443, client)
+	ib2 := seedClientMutationInbound(t, "vless-reset-pre-b", 26443, client)
+
+	inboundSvc := &InboundService{}
+	clientSvc := &ClientService{}
+	if err := clientSvc.SyncInbound(database.GetDB(), ib1, []model.Client{client}); err != nil {
+		t.Fatalf("SyncInbound ib1: %v", err)
+	}
+	if err := clientSvc.SyncInbound(database.GetDB(), ib2, []model.Client{client}); err != nil {
+		t.Fatalf("SyncInbound ib2: %v", err)
+	}
+
+	traffic := &xray.ClientTraffic{
+		InboundId: ib1,
+		Email:     client.Email,
+		Enable:    false,
+		Up:        321,
+		Down:      654,
+	}
+	if err := database.GetDB().Create(traffic).Error; err != nil {
+		t.Fatalf("seed traffic: %v", err)
+	}
+
+	var corrupt model.Inbound
+	if err := database.GetDB().First(&corrupt, ib2).Error; err != nil {
+		t.Fatalf("load inbound %d: %v", ib2, err)
+	}
+	corrupt.Settings = `{"clients":[]}`
+	if err := database.GetDB().Save(&corrupt).Error; err != nil {
+		t.Fatalf("corrupt inbound %d: %v", ib2, err)
+	}
+
+	needRestart, err := clientSvc.ResetTrafficByEmail(inboundSvc, client.Email)
+	if err == nil {
+		t.Fatalf("ResetTrafficByEmail unexpectedly succeeded")
+	}
+	if needRestart {
+		t.Fatalf("needRestart = true, want false when prevalidation fails before reset")
+	}
+
+	var kept xray.ClientTraffic
+	if err := database.GetDB().Where("email = ?", client.Email).First(&kept).Error; err != nil {
+		t.Fatalf("reload traffic: %v", err)
+	}
+	if kept.Enable {
+		t.Fatalf("traffic enable changed on failed prevalidation")
+	}
+	if kept.Up != 321 || kept.Down != 654 {
+		t.Fatalf("traffic counters changed on failed prevalidation: up:%d down:%d", kept.Up, kept.Down)
+	}
+}

@@ -1847,6 +1847,26 @@ func (s *ClientService) ResetTrafficByEmail(inboundSvc *InboundService, email st
 		}
 		return false, nil
 	}
+	for _, ibId := range inboundIds {
+		inbound, getErr := inboundSvc.GetInbound(ibId)
+		if getErr != nil {
+			return false, getErr
+		}
+		clients, getErr := inboundSvc.GetClients(inbound)
+		if getErr != nil {
+			return false, getErr
+		}
+		found := false
+		for i := range clients {
+			if clients[i].Email == email {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false, common.NewError("Client Not Found In Inbound For Email:", email)
+		}
+	}
 	needRestart := false
 	for _, ibId := range inboundIds {
 		nr, rErr := inboundSvc.ResetClientTraffic(ibId, email)
