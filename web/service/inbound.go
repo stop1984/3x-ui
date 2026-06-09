@@ -3116,6 +3116,44 @@ func (s *InboundService) GetClientByEmail(clientEmail string) (*xray.ClientTraff
 func (s *InboundService) ResetClientTrafficByEmail(clientEmail string) error {
 	return submitTrafficWrite(func() error {
 		db := database.GetDB()
+		rec, err := s.clientService.GetRecordByEmail(db, clientEmail)
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		if err == nil && rec != nil {
+			inboundIds, idsErr := s.clientService.GetInboundIdsForRecord(rec.Id)
+			if idsErr != nil {
+				return idsErr
+			}
+			if len(inboundIds) > 0 {
+				for _, ibId := range inboundIds {
+					inbound, getErr := s.GetInbound(ibId)
+					if getErr != nil {
+						return getErr
+					}
+					clients, getErr := s.GetClients(inbound)
+					if getErr != nil {
+						return getErr
+					}
+					found := false
+					for i := range clients {
+						if clients[i].Email == clientEmail {
+							found = true
+							break
+						}
+					}
+					if !found {
+						return common.NewError("Client Not Found In Inbound For Email:", clientEmail)
+					}
+				}
+				for _, ibId := range inboundIds {
+					if _, resetErr := s.resetClientTrafficLocked(ibId, clientEmail); resetErr != nil {
+						return resetErr
+					}
+				}
+				return nil
+			}
+		}
 		return db.Model(xray.ClientTraffic{}).
 			Where("email = ?", clientEmail).
 			Updates(map[string]any{"enable": true, "up": 0, "down": 0}).Error
