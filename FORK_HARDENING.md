@@ -181,7 +181,7 @@ Effect:
   inbound JSON blob lagged behind,
 - copy/import flows keep shared `subId` state aligned across attached inbounds.
 
-### `TBD` - Make client edit + attachment sync a single backend operation
+### `d80bd892` - Make client edit + attachment sync a single backend operation
 
 Problem:
 
@@ -256,7 +256,7 @@ Live deployment verification:
 At the time of writing, the local host has already deployed the patched binary
 through commit:
 
-- `2bf07589`
+- `d80bd892`
 
 Local live binary:
 
@@ -264,7 +264,7 @@ Local live binary:
 
 Rollback artifact for the latest rollout:
 
-- `/root/backups/20260608T222057Z_xui_fork_patch_deploy_6`
+- `/root/backups/20260609T051634Z_xui_fork_patch_deploy_7`
 
 If this file is later pushed to GitHub, this section can be kept or trimmed;
 the commit history above is the important public part.
