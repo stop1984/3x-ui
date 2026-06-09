@@ -970,19 +970,19 @@ func TestGetClientInboundByTrafficIDRejectsLegacyOwnerWithoutMembership(t *testi
 	}
 }
 
-func TestGetClientTrafficByEmailRejectsRecordWithoutMembership(t *testing.T) {
+func TestDelInboundPreservesDetachedClientRecordAndTraffic(t *testing.T) {
 	setupClientMutationDB(t)
 
 	client := model.Client{
 		ID:         "0dd7003a-1984-4f50-89cb-ee48a1af88ae",
-		Email:      "traffic-orphan@example.com",
-		SubID:      "sub-traffic-orphan",
+		Email:      "delete-inbound-detached@example.com",
+		SubID:      "sub-delete-inbound-detached",
 		Enable:     true,
 		LimitIP:    1,
 		TotalGB:    1024,
 		ExpiryTime: 4102444800000,
 	}
-	ib1 := seedClientMutationInbound(t, "vless-traffic-orphan", 33453, client)
+	ib1 := seedClientMutationInbound(t, "vless-delete-detached", 33453, client)
 
 	inboundSvc := &InboundService{}
 	clientSvc := &ClientService{}
@@ -990,32 +990,112 @@ func TestGetClientTrafficByEmailRejectsRecordWithoutMembership(t *testing.T) {
 		t.Fatalf("SyncInbound ib1: %v", err)
 	}
 	if err := database.GetDB().Create(&xray.ClientTraffic{
-		InboundId:  ib1,
-		Email:      client.Email,
-		Enable:     true,
-		Total:      client.TotalGB,
-		ExpiryTime: client.ExpiryTime,
-	}).Error; err != nil {
+			InboundId:  ib1,
+			Email:      client.Email,
+			Enable:     true,
+			Total:      client.TotalGB,
+			ExpiryTime: client.ExpiryTime,
+		}).Error; err != nil {
 		t.Fatalf("seed traffic: %v", err)
 	}
-	if err := database.GetDB().Where("client_id > 0").Delete(&model.ClientInbound{}).Error; err != nil {
-		t.Fatalf("delete attachments: %v", err)
+
+	needRestart, err := inboundSvc.DelInbound(ib1)
+	if err != nil {
+		t.Fatalf("DelInbound(%d): %v", ib1, err)
 	}
-	var stripped model.Inbound
-	if err := database.GetDB().First(&stripped, ib1).Error; err != nil {
-		t.Fatalf("reload inbound %d: %v", ib1, err)
+	if !needRestart {
+		t.Fatalf("needRestart = false, want true when local runtime is absent")
 	}
-	stripped.Settings = `{"clients":[]}`
-	if err := database.GetDB().Save(&stripped).Error; err != nil {
-		t.Fatalf("strip inbound client membership: %v", err)
+
+	if _, err := clientSvc.GetRecordByEmail(nil, client.Email); err != nil {
+		t.Fatalf("GetRecordByEmail after DelInbound: %v", err)
+	}
+	rec, err := clientSvc.GetRecordByEmail(nil, client.Email)
+	if err != nil {
+		t.Fatalf("GetRecordByEmail second read: %v", err)
+	}
+	attached, err := clientSvc.GetInboundIdsForRecord(rec.Id)
+	if err != nil {
+		t.Fatalf("GetInboundIdsForRecord: %v", err)
+	}
+	if len(attached) != 0 {
+		t.Fatalf("attached inbounds after DelInbound = %v, want detached client", attached)
 	}
 
 	traffic, err := inboundSvc.GetClientTrafficByEmail(client.Email)
-	if err == nil {
-		t.Fatalf("GetClientTrafficByEmail unexpectedly succeeded without attachment or inbound membership")
+	if err != nil {
+		t.Fatalf("GetClientTrafficByEmail after DelInbound: %v", err)
 	}
-	if traffic != nil {
-		t.Fatalf("GetClientTrafficByEmail returned traffic despite missing membership")
+	if traffic == nil {
+		t.Fatalf("GetClientTrafficByEmail returned nil traffic after DelInbound")
+	}
+	if traffic.UUID != client.ID {
+		t.Fatalf("traffic UUID = %q, want %q", traffic.UUID, client.ID)
+	}
+	if traffic.SubId != client.SubID {
+		t.Fatalf("traffic SubId = %q, want %q", traffic.SubId, client.SubID)
+	}
+
+	listed, err := clientSvc.List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(listed) != 1 {
+		t.Fatalf("List returned %d clients, want 1", len(listed))
+	}
+	if len(listed[0].InboundIds) != 0 {
+		t.Fatalf("List inboundIds = %v, want detached client", listed[0].InboundIds)
+	}
+	if listed[0].Traffic == nil || listed[0].Traffic.Email != client.Email {
+		t.Fatalf("List traffic = %+v, want preserved traffic for %s", listed[0].Traffic, client.Email)
+	}
+}
+
+func TestDelInboundPreservesRemainingSharedAttachments(t *testing.T) {
+	setupClientMutationDB(t)
+
+	client := model.Client{
+		ID:         "864e924f-c9be-4434-a298-a16500de7236",
+		Email:      "delete-inbound-shared@example.com",
+		SubID:      "sub-delete-inbound-shared",
+		Enable:     true,
+		LimitIP:    1,
+		TotalGB:    1024,
+		ExpiryTime: 4102444800000,
+	}
+	ib1 := seedClientMutationInbound(t, "vless-delete-shared-a", 33463, client)
+	ib2 := seedClientMutationInbound(t, "vless-delete-shared-b", 33473, client)
+
+	inboundSvc := &InboundService{}
+	clientSvc := &ClientService{}
+	if err := clientSvc.SyncInbound(database.GetDB(), ib1, []model.Client{client}); err != nil {
+		t.Fatalf("SyncInbound ib1: %v", err)
+	}
+	if err := clientSvc.SyncInbound(database.GetDB(), ib2, []model.Client{client}); err != nil {
+		t.Fatalf("SyncInbound ib2: %v", err)
+	}
+
+	needRestart, err := inboundSvc.DelInbound(ib1)
+	if err != nil {
+		t.Fatalf("DelInbound(%d): %v", ib1, err)
+	}
+	if !needRestart {
+		t.Fatalf("needRestart = false, want true when local runtime is absent")
+	}
+
+	rec, err := clientSvc.GetRecordByEmail(nil, client.Email)
+	if err != nil {
+		t.Fatalf("GetRecordByEmail after DelInbound: %v", err)
+	}
+	attached, err := clientSvc.GetInboundIdsForRecord(rec.Id)
+	if err != nil {
+		t.Fatalf("GetInboundIdsForRecord: %v", err)
+	}
+	if len(attached) != 1 || attached[0] != ib2 {
+		t.Fatalf("attached inbounds after DelInbound = %v, want [%d]", attached, ib2)
+	}
+	if !inboundHasClientEmail(t, ib2, client.Email) {
+		t.Fatalf("client missing from surviving inbound %d", ib2)
 	}
 }
 
