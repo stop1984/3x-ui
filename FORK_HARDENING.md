@@ -248,7 +248,7 @@ Effect:
 - the rollback safety now exists below the modal/orchestration layer instead of
   only above it.
 
-### `TBD` - Harden multi-inbound create and copy paths
+### `d57fe3e5` - Harden multi-inbound create and copy paths
 
 Problem:
 
@@ -329,7 +329,7 @@ Live deployment verification:
 At the time of writing, the local host has already deployed the patched binary
 through commit:
 
-- `7dc4d4c4`
+- `d57fe3e5`
 
 Local live binary:
 
@@ -337,7 +337,7 @@ Local live binary:
 
 Rollback artifact for the latest rollout:
 
-- `/root/backups/20260609T052429Z_xui_fork_patch_deploy_8`
+- `/root/backups/20260609T054847Z_xui_fork_patch_deploy_9`
 
 If this file is later pushed to GitHub, this section can be kept or trimmed;
 the commit history above is the important public part.
