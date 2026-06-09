@@ -600,3 +600,65 @@ func TestResetTrafficByEmailPrevalidatesAllAttachedInbounds(t *testing.T) {
 		t.Fatalf("traffic counters changed on failed prevalidation: up:%d down:%d", kept.Up, kept.Down)
 	}
 }
+
+func TestGetClientByEmailSkipsStaleTrafficOwnerInbound(t *testing.T) {
+	setupClientMutationDB(t)
+
+	client := model.Client{
+		ID:         "8f0b9f3f-d0a4-4b45-bb8a-58e9ae8494cf",
+		Email:      "lookup-shared@example.com",
+		SubID:      "sub-lookup-shared",
+		Enable:     true,
+		LimitIP:    1,
+		TotalGB:    1024,
+		ExpiryTime: 4102444800000,
+	}
+	ib1 := seedClientMutationInbound(t, "vless-lookup-a", 27443, client)
+	ib2 := seedClientMutationInbound(t, "vless-lookup-b", 28443, client)
+
+	inboundSvc := &InboundService{}
+	clientSvc := &ClientService{}
+	if err := clientSvc.SyncInbound(database.GetDB(), ib1, []model.Client{client}); err != nil {
+		t.Fatalf("SyncInbound ib1: %v", err)
+	}
+	if err := clientSvc.SyncInbound(database.GetDB(), ib2, []model.Client{client}); err != nil {
+		t.Fatalf("SyncInbound ib2: %v", err)
+	}
+
+	traffic := &xray.ClientTraffic{
+		InboundId: ib1,
+		Email:     client.Email,
+		Enable:    true,
+		Up:        11,
+		Down:      22,
+	}
+	if err := database.GetDB().Create(traffic).Error; err != nil {
+		t.Fatalf("seed traffic: %v", err)
+	}
+
+	var stale model.Inbound
+	if err := database.GetDB().First(&stale, ib1).Error; err != nil {
+		t.Fatalf("load inbound %d: %v", ib1, err)
+	}
+	stale.Settings = `{"clients":[]}`
+	if err := database.GetDB().Save(&stale).Error; err != nil {
+		t.Fatalf("stale inbound %d: %v", ib1, err)
+	}
+
+	gotTraffic, gotClient, err := inboundSvc.GetClientByEmail(client.Email)
+	if err != nil {
+		t.Fatalf("GetClientByEmail: %v", err)
+	}
+	if gotTraffic == nil || gotClient == nil {
+		t.Fatalf("GetClientByEmail returned nil traffic/client")
+	}
+	if gotTraffic.Email != client.Email {
+		t.Fatalf("traffic email = %q, want %q", gotTraffic.Email, client.Email)
+	}
+	if gotClient.Email != client.Email {
+		t.Fatalf("client email = %q, want %q", gotClient.Email, client.Email)
+	}
+	if gotClient.SubID != client.SubID {
+		t.Fatalf("client subId = %q, want %q", gotClient.SubID, client.SubID)
+	}
+}

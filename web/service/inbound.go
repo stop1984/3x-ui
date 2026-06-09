@@ -2993,32 +2993,50 @@ func (s *InboundService) GetClientInboundByTrafficID(trafficId int) (traffic *xr
 
 func (s *InboundService) GetClientInboundByEmail(email string) (traffic *xray.ClientTraffic, inbound *model.Inbound, err error) {
 	db := database.GetDB()
-	var traffics []*xray.ClientTraffic
-	err = db.Model(xray.ClientTraffic{}).Where("email = ?", email).Find(&traffics).Error
+	traffic = &xray.ClientTraffic{}
+	err = db.Where("email = ?", email).First(traffic).Error
 	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil, nil
+		}
 		logger.Warningf("Error retrieving ClientTraffic with email %s: %v", email, err)
 		return nil, nil, err
 	}
-	if len(traffics) == 0 {
-		return nil, nil, nil
+
+	rec, recErr := s.clientService.GetRecordByEmail(nil, email)
+	if recErr == nil {
+		inboundIDs, idsErr := s.clientService.GetInboundIdsForRecord(rec.Id)
+		if idsErr != nil {
+			return nil, nil, idsErr
+		}
+		for _, inboundID := range inboundIDs {
+			candidate, getErr := s.GetInbound(inboundID)
+			if getErr != nil {
+				continue
+			}
+			clients, getErr := s.GetClients(candidate)
+			if getErr != nil {
+				continue
+			}
+			for i := range clients {
+				if clients[i].Email == email {
+					return traffic, candidate, nil
+				}
+			}
+		}
 	}
-	traffic = traffics[0]
 
 	inbound, err = s.GetInbound(traffic.InboundId)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		// client_traffics.inbound_id is a legacy single-inbound pointer that goes
-		// stale when an inbound is deleted and recreated: the email-keyed traffic
-		// row survives but still references the missing inbound. Fall back to the
-		// authoritative client_inbounds link so email lookups (reset, info, …) work.
-		ids, idErr := s.clientService.GetInboundIdsForEmail(db, email)
-		if idErr != nil {
-			return traffic, nil, idErr
-		}
-		if len(ids) > 0 {
-			inbound, err = s.GetInbound(ids[0])
-		}
+		// client_traffics.inbound_id is a legacy single-inbound pointer that can
+		// survive an inbound recreation. We already tried the canonical
+		// client_inbounds walk above; return the original miss if nothing matched.
+		return traffic, nil, err
 	}
-	return traffic, inbound, err
+	if err != nil {
+		return traffic, nil, err
+	}
+	return traffic, inbound, nil
 }
 
 func (s *InboundService) GetClientEmailsForInboundSubID(inboundID int, subID string) ([]string, error) {
