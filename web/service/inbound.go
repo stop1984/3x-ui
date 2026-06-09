@@ -1948,6 +1948,41 @@ func (s *InboundService) setRemoteTrafficLocked(nodeID int, snap *runtime.Traffi
 			Delete(&model.Inbound{}).Error; err != nil {
 			return false, err
 		}
+		if len(attachedEmails) > 0 {
+			var stillOnNode []string
+			if err := tx.Table("clients").
+				Select("DISTINCT clients.email").
+				Joins("JOIN client_inbounds ON client_inbounds.client_id = clients.id").
+				Joins("JOIN inbounds ON inbounds.id = client_inbounds.inbound_id").
+				Where("inbounds.node_id = ? AND clients.email IN ?", nodeID, attachedEmails).
+				Pluck("clients.email", &stillOnNode).Error; err != nil {
+				return false, err
+			}
+			stillOnNodeSet := make(map[string]struct{}, len(stillOnNode))
+			for _, e := range stillOnNode {
+				stillOnNodeSet[e] = struct{}{}
+			}
+			toDeleteNodeRows := make([]string, 0, len(attachedEmails))
+			seenEmail := make(map[string]struct{}, len(attachedEmails))
+			for _, email := range attachedEmails {
+				if email == "" {
+					continue
+				}
+				if _, dup := seenEmail[email]; dup {
+					continue
+				}
+				seenEmail[email] = struct{}{}
+				if _, kept := stillOnNodeSet[email]; !kept {
+					toDeleteNodeRows = append(toDeleteNodeRows, email)
+				}
+			}
+			if len(toDeleteNodeRows) > 0 {
+				if err := tx.Where("node_id = ? AND email IN ?", nodeID, toDeleteNodeRows).
+					Delete(&model.NodeClientTraffic{}).Error; err != nil {
+					return false, err
+				}
+			}
+		}
 		delete(tagToCentral, c.Tag)
 		structuralChange = true
 	}
@@ -2044,14 +2079,12 @@ func (s *InboundService) setRemoteTrafficLocked(nodeID int, snap *runtime.Traffi
 			if _, kept := snapEmails[k.email]; kept {
 				continue
 			}
-			if err := tx.Where("node_id = ? AND email = ?", nodeID, existing.Email).
-				Delete(&model.NodeClientTraffic{}).Error; err != nil {
-				return false, err
-			}
-			if err := tx.Where("inbound_id = ? AND email = ?", c.Id, existing.Email).
-				Delete(&xray.ClientTraffic{}).Error; err != nil {
-				return false, err
-			}
+			// Do not eagerly delete shared central rows here. By the time a client
+			// disappears from one node inbound, it may still be attached to a
+			// sibling inbound (local or node-side). The canonical cleanup pass below
+			// re-checks attachment membership after SyncInbound has finished and can
+			// safely decide whether to drop node-local or fully orphaned rows.
+			_ = existing
 			structuralChange = true
 		}
 	}
@@ -2152,6 +2185,17 @@ func (s *InboundService) setRemoteTrafficLocked(nodeID int, snap *runtime.Traffi
 			if _, kept := stillSet[email]; kept {
 				continue
 			}
+			var nodeAttachmentCount int64
+			if err := tx.Table("client_inbounds").
+				Joins("JOIN clients ON clients.id = client_inbounds.client_id").
+				Joins("JOIN inbounds ON inbounds.id = client_inbounds.inbound_id").
+				Where("clients.email = ? AND inbounds.node_id = ?", email, nodeID).
+				Count(&nodeAttachmentCount).Error; err == nil && nodeAttachmentCount == 0 {
+				if err := tx.Where("node_id = ? AND email = ?", nodeID, email).
+					Delete(&model.NodeClientTraffic{}).Error; err != nil {
+					logger.Warningf("setRemoteTraffic: delete NodeClientTraffic %q failed: %v", email, err)
+				}
+			}
 			var attachmentCount int64
 			if err := tx.Table("client_inbounds").
 				Joins("JOIN clients ON clients.id = client_inbounds.client_id").
@@ -2167,9 +2211,6 @@ func (s *InboundService) setRemoteTrafficLocked(nodeID int, snap *runtime.Traffi
 			}
 			if err := tx.Where("email = ?", email).Delete(&xray.ClientTraffic{}).Error; err != nil {
 				logger.Warningf("setRemoteTraffic: delete ClientTraffic %q failed: %v", email, err)
-			}
-			if err := tx.Where("email = ?", email).Delete(&model.NodeClientTraffic{}).Error; err != nil {
-				logger.Warningf("setRemoteTraffic: delete NodeClientTraffic %q failed: %v", email, err)
 			}
 			structuralChange = true
 		}

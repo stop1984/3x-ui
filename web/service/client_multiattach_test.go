@@ -1381,6 +1381,14 @@ func TestSetRemoteTrafficMissingInboundPreservesSharedClientTraffic(t *testing.T
 	}).Error; err != nil {
 		t.Fatalf("seed traffic: %v", err)
 	}
+	if err := database.GetDB().Create(&model.NodeClientTraffic{
+		NodeId: nodeID,
+		Email:  client.Email,
+		Up:     11,
+		Down:   22,
+	}).Error; err != nil {
+		t.Fatalf("seed node traffic: %v", err)
+	}
 
 	snap := &runtime.TrafficSnapshot{Inbounds: []*model.Inbound{}}
 	if _, err := inboundSvc.setRemoteTrafficLocked(nodeID, snap, false); err != nil {
@@ -1407,6 +1415,112 @@ func TestSetRemoteTrafficMissingInboundPreservesSharedClientTraffic(t *testing.T
 	}
 	if !inboundHasClientEmail(t, localInboundID, client.Email) {
 		t.Fatalf("local inbound %d lost shared client %s", localInboundID, client.Email)
+	}
+	var nodeCount int64
+	if err := database.GetDB().Model(&model.NodeClientTraffic{}).Where("node_id = ? AND email = ?", nodeID, client.Email).Count(&nodeCount).Error; err != nil {
+		t.Fatalf("count node traffic: %v", err)
+	}
+	if nodeCount != 0 {
+		t.Fatalf("stale node traffic row kept after node inbound disappearance, count=%d", nodeCount)
+	}
+}
+
+func TestSetRemoteTrafficRemovedClientClearsNodeBaselineButKeepsLocalSharedState(t *testing.T) {
+	setupClientMutationDB(t)
+
+	const nodeID = 43
+	client := model.Client{
+		ID:         "f0e12e3a-6280-4b64-8f77-3f40e28c4479",
+		Email:      "node-removed-local-shared@example.com",
+		SubID:      "sub-node-removed-local-shared",
+		Enable:     true,
+		LimitIP:    1,
+		TotalGB:    1024,
+		ExpiryTime: 4102444800000,
+	}
+	localInboundID := seedClientMutationInbound(t, "local-node-removed-keep", 33543, client)
+	nid := nodeID
+	nodeInbound := &model.Inbound{
+		UserId:         1,
+		NodeID:         &nid,
+		Tag:            "n43-vless-shared",
+		Enable:         true,
+		Port:           33553,
+		Protocol:       model.VLESS,
+		Settings:       `{"clients":[{"email":"` + client.Email + `","id":"` + client.ID + `","enable":true}]}`,
+		StreamSettings: `{"network":"tcp","security":"tls"}`,
+	}
+	if err := database.GetDB().Create(nodeInbound).Error; err != nil {
+		t.Fatalf("create node inbound: %v", err)
+	}
+
+	inboundSvc := &InboundService{}
+	clientSvc := &ClientService{}
+	if err := clientSvc.SyncInbound(database.GetDB(), localInboundID, []model.Client{client}); err != nil {
+		t.Fatalf("SyncInbound local: %v", err)
+	}
+	if err := clientSvc.SyncInbound(database.GetDB(), nodeInbound.Id, []model.Client{client}); err != nil {
+		t.Fatalf("SyncInbound node: %v", err)
+	}
+	if err := database.GetDB().Create(&xray.ClientTraffic{
+		InboundId:  nodeInbound.Id,
+		Email:      client.Email,
+		Enable:     true,
+		Total:      client.TotalGB,
+		ExpiryTime: client.ExpiryTime,
+	}).Error; err != nil {
+		t.Fatalf("seed traffic: %v", err)
+	}
+	if err := database.GetDB().Create(&model.NodeClientTraffic{
+		NodeId: nodeID,
+		Email:  client.Email,
+		Up:     33,
+		Down:   44,
+	}).Error; err != nil {
+		t.Fatalf("seed node traffic: %v", err)
+	}
+
+	snap := &runtime.TrafficSnapshot{
+		Inbounds: []*model.Inbound{{
+			Tag:            "n43-vless-shared",
+			Enable:         true,
+			Port:           33553,
+			Protocol:       model.VLESS,
+			Settings:       `{"clients":[]}`,
+			StreamSettings: `{"network":"tcp","security":"tls"}`,
+		}},
+	}
+	if _, err := inboundSvc.setRemoteTrafficLocked(nodeID, snap, false); err != nil {
+		t.Fatalf("setRemoteTrafficLocked: %v", err)
+	}
+
+	rec, err := clientSvc.GetRecordByEmail(nil, client.Email)
+	if err != nil {
+		t.Fatalf("GetRecordByEmail: %v", err)
+	}
+	attached, err := clientSvc.GetInboundIdsForRecord(rec.Id)
+	if err != nil {
+		t.Fatalf("GetInboundIdsForRecord: %v", err)
+	}
+	if len(attached) != 1 || attached[0] != localInboundID {
+		t.Fatalf("attached inbounds after node-side client removal = %v, want [%d]", attached, localInboundID)
+	}
+	traffic, err := inboundSvc.GetClientTrafficByEmail(client.Email)
+	if err != nil {
+		t.Fatalf("GetClientTrafficByEmail: %v", err)
+	}
+	if traffic == nil {
+		t.Fatalf("shared traffic row was deleted when node removed shared client")
+	}
+	if !inboundHasClientEmail(t, localInboundID, client.Email) {
+		t.Fatalf("local inbound %d lost shared client %s", localInboundID, client.Email)
+	}
+	var nodeCount int64
+	if err := database.GetDB().Model(&model.NodeClientTraffic{}).Where("node_id = ? AND email = ?", nodeID, client.Email).Count(&nodeCount).Error; err != nil {
+		t.Fatalf("count node traffic: %v", err)
+	}
+	if nodeCount != 0 {
+		t.Fatalf("stale node traffic row kept after node removed client, count=%d", nodeCount)
 	}
 }
 
