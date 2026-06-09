@@ -2950,6 +2950,49 @@ type bulkAdjustEntry struct {
 	newTotal    int64
 }
 
+func (s *ClientService) bulkAdjustSharedClient(inboundSvc *InboundService, entry *bulkAdjustEntry) (bool, error) {
+	if entry == nil || entry.record == nil {
+		return false, common.NewError("client not found")
+	}
+	oldClient := entry.record.ToClient()
+	updated := *oldClient
+	if entry.applyExpiry {
+		updated.ExpiryTime = entry.newExpiry
+	}
+	if entry.applyTotal {
+		updated.TotalGB = entry.newTotal
+	}
+
+	needRestart, err := s.Update(inboundSvc, entry.record.Id, updated)
+	if err != nil {
+		return needRestart, err
+	}
+
+	updates := map[string]any{}
+	if entry.applyExpiry {
+		updates["expiry_time"] = entry.newExpiry
+	}
+	if entry.applyTotal {
+		updates["total"] = entry.newTotal
+	}
+	if len(updates) == 0 {
+		return needRestart, nil
+	}
+
+	if err := database.GetDB().Model(xray.ClientTraffic{}).Where("email = ?", entry.record.Email).Updates(updates).Error; err != nil {
+		rollbackNeedRestart, rollbackErr := s.Update(inboundSvc, entry.record.Id, *oldClient)
+		if rollbackNeedRestart {
+			needRestart = true
+		}
+		if rollbackErr != nil {
+			return needRestart, fmt.Errorf("bulk adjust failed: %w (rollback failed: %v)", err, rollbackErr)
+		}
+		return needRestart, err
+	}
+
+	return needRestart, nil
+}
+
 // BulkAdjust shifts ExpiryTime by addDays (days) and TotalGB by addBytes
 // for every email in the list. Clients whose corresponding field is
 // unlimited (0) are skipped — bulk extend should not accidentally
@@ -3078,17 +3121,50 @@ func (s *ClientService) BulkAdjust(inboundSvc *InboundService, emails []string, 
 		mappings = append(mappings, rows...)
 	}
 	emailsByInbound := map[int][]string{}
+	inboundCountByEmail := make(map[string]int, len(plan))
 	for _, m := range mappings {
 		email, ok := recordIdToEmail[m.ClientId]
 		if !ok {
 			continue
 		}
 		emailsByInbound[m.InboundId] = append(emailsByInbound[m.InboundId], email)
+		inboundCountByEmail[email]++
 	}
 
 	needRestart := false
+	for email, entry := range plan {
+		if inboundCountByEmail[email] <= 1 {
+			continue
+		}
+		nr, err := s.bulkAdjustSharedClient(inboundSvc, entry)
+		if nr {
+			needRestart = true
+		}
+		if err != nil {
+			skippedReasons[email] = err.Error()
+		} else {
+			result.Adjusted++
+		}
+		delete(plan, email)
+	}
+	if len(plan) == 0 {
+		for email, reason := range skippedReasons {
+			result.Skipped = append(result.Skipped, BulkAdjustReport{Email: email, Reason: reason})
+		}
+		return result, needRestart, nil
+	}
+
 	for inboundId, ibEmails := range emailsByInbound {
-		ibRes := s.bulkAdjustInboundClients(inboundSvc, inboundId, ibEmails, plan)
+		filteredEmails := ibEmails[:0]
+		for _, email := range ibEmails {
+			if plan[email] != nil {
+				filteredEmails = append(filteredEmails, email)
+			}
+		}
+		if len(filteredEmails) == 0 {
+			continue
+		}
+		ibRes := s.bulkAdjustInboundClients(inboundSvc, inboundId, filteredEmails, plan)
 		if ibRes.needRestart {
 			needRestart = true
 		}

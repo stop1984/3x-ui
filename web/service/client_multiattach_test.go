@@ -674,6 +674,66 @@ func TestResetTrafficByEmailPrevalidatesAllAttachedInbounds(t *testing.T) {
 	}
 }
 
+func TestResetClientTrafficByEmailPrevalidatesAllAttachedInbounds(t *testing.T) {
+	setupClientMutationDB(t)
+
+	client := model.Client{
+		ID:         "c7049d8b-a70d-4432-9d31-80b2fd93af1a",
+		Email:      "reset-direct-prevalidate@example.com",
+		SubID:      "sub-reset-direct-prevalidate",
+		Enable:     true,
+		LimitIP:    1,
+		TotalGB:    1024,
+		ExpiryTime: 4102444800000,
+	}
+	ib1 := seedClientMutationInbound(t, "vless-reset-direct-a", 26543, client)
+	ib2 := seedClientMutationInbound(t, "vless-reset-direct-b", 26643, client)
+
+	inboundSvc := &InboundService{}
+	clientSvc := &ClientService{}
+	if err := clientSvc.SyncInbound(database.GetDB(), ib1, []model.Client{client}); err != nil {
+		t.Fatalf("SyncInbound ib1: %v", err)
+	}
+	if err := clientSvc.SyncInbound(database.GetDB(), ib2, []model.Client{client}); err != nil {
+		t.Fatalf("SyncInbound ib2: %v", err)
+	}
+
+	traffic := &xray.ClientTraffic{
+		InboundId: ib1,
+		Email:     client.Email,
+		Enable:    false,
+		Up:        987,
+		Down:      654,
+	}
+	if err := database.GetDB().Create(traffic).Error; err != nil {
+		t.Fatalf("seed traffic: %v", err)
+	}
+
+	var corrupt model.Inbound
+	if err := database.GetDB().First(&corrupt, ib2).Error; err != nil {
+		t.Fatalf("load inbound %d: %v", ib2, err)
+	}
+	corrupt.Settings = `{"clients":[]}`
+	if err := database.GetDB().Save(&corrupt).Error; err != nil {
+		t.Fatalf("corrupt inbound %d: %v", ib2, err)
+	}
+
+	if err := inboundSvc.ResetClientTrafficByEmail(client.Email); err == nil {
+		t.Fatalf("ResetClientTrafficByEmail unexpectedly succeeded")
+	}
+
+	var kept xray.ClientTraffic
+	if err := database.GetDB().Where("email = ?", client.Email).First(&kept).Error; err != nil {
+		t.Fatalf("reload traffic: %v", err)
+	}
+	if kept.Enable {
+		t.Fatalf("traffic enable changed on failed prevalidation")
+	}
+	if kept.Up != 987 || kept.Down != 654 {
+		t.Fatalf("traffic counters changed on failed prevalidation: up:%d down:%d", kept.Up, kept.Down)
+	}
+}
+
 func TestGetClientByEmailSkipsStaleTrafficOwnerInbound(t *testing.T) {
 	setupClientMutationDB(t)
 
@@ -848,6 +908,91 @@ func TestGetClientInboundByTrafficIDRejectsLegacyOwnerWithoutMembership(t *testi
 	}
 	if gotInbound != nil {
 		t.Fatalf("GetClientInboundByTrafficID should not return fallback inbound %d for stale membership", gotInbound.Id)
+	}
+}
+
+func TestBulkAdjustFallsBackToAtomicAdjustForMultiAttachClient(t *testing.T) {
+	setupClientMutationDB(t)
+
+	client := model.Client{
+		ID:         "bf2c98ee-bf15-4f17-8db9-963ad648cc53",
+		Email:      "bulk-adjust-shared@example.com",
+		SubID:      "sub-bulk-adjust-shared",
+		Enable:     true,
+		LimitIP:    1,
+		TotalGB:    1024,
+		ExpiryTime: 4102444800000,
+		Comment:    "before",
+	}
+	ib1 := seedClientMutationInbound(t, "vless-bulk-adjust-a", 33443, client)
+	ib2 := seedClientMutationInbound(t, "vless-bulk-adjust-b", 34443, client)
+
+	inboundSvc := &InboundService{}
+	clientSvc := &ClientService{}
+	if err := clientSvc.SyncInbound(database.GetDB(), ib1, []model.Client{client}); err != nil {
+		t.Fatalf("SyncInbound ib1: %v", err)
+	}
+	if err := clientSvc.SyncInbound(database.GetDB(), ib2, []model.Client{client}); err != nil {
+		t.Fatalf("SyncInbound ib2: %v", err)
+	}
+	if err := database.GetDB().Create(&xray.ClientTraffic{
+		InboundId:  ib1,
+		Email:      client.Email,
+		Enable:     true,
+		Total:      client.TotalGB,
+		ExpiryTime: client.ExpiryTime,
+	}).Error; err != nil {
+		t.Fatalf("seed traffic: %v", err)
+	}
+
+	var corrupt model.Inbound
+	if err := database.GetDB().First(&corrupt, ib2).Error; err != nil {
+		t.Fatalf("load inbound %d: %v", ib2, err)
+	}
+	corrupt.Settings = `{"clients":`
+	if err := database.GetDB().Save(&corrupt).Error; err != nil {
+		t.Fatalf("corrupt inbound %d: %v", ib2, err)
+	}
+
+	result, _, err := clientSvc.BulkAdjust(inboundSvc, []string{client.Email}, 7, 512)
+	if err != nil {
+		t.Fatalf("BulkAdjust: %v", err)
+	}
+	if result.Adjusted != 0 {
+		t.Fatalf("BulkAdjust adjusted = %d, want 0 after rollback", result.Adjusted)
+	}
+	if len(result.Skipped) != 1 {
+		t.Fatalf("BulkAdjust skipped = %+v, want single rollback failure", result.Skipped)
+	}
+
+	rec, err := clientSvc.GetRecordByEmail(nil, client.Email)
+	if err != nil {
+		t.Fatalf("GetRecordByEmail: %v", err)
+	}
+	if rec.TotalGB != client.TotalGB {
+		t.Fatalf("client record totalGB = %d, want %d", rec.TotalGB, client.TotalGB)
+	}
+	if rec.ExpiryTime != client.ExpiryTime {
+		t.Fatalf("client record expiry = %d, want %d", rec.ExpiryTime, client.ExpiryTime)
+	}
+
+	c1 := inboundClientByEmail(t, ib1, client.Email)
+	if c1.TotalGB != client.TotalGB {
+		t.Fatalf("inbound %d totalGB = %d, want %d", ib1, c1.TotalGB, client.TotalGB)
+	}
+	if c1.ExpiryTime != client.ExpiryTime {
+		t.Fatalf("inbound %d expiry = %d, want %d", ib1, c1.ExpiryTime, client.ExpiryTime)
+	}
+
+	var traffic xray.ClientTraffic
+	if err := database.GetDB().Where("email = ?", client.Email).First(&traffic).Error; err != nil {
+		t.Fatalf("reload traffic: %v", err)
+	}
+	if traffic.Total != client.TotalGB {
+		t.Fatalf("traffic total = %d, want %d", traffic.Total, client.TotalGB)
+	}
+	if traffic.ExpiryTime != client.ExpiryTime {
+		t.Fatalf("traffic expiry = %d, want %d", traffic.ExpiryTime, client.ExpiryTime)
 	}
 }
 
