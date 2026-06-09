@@ -320,6 +320,10 @@ And delete rollback coverage under:
 
 - `web/service/client_multiattach_test.go`
 
+And reset-traffic shared-client coverage under:
+
+- `web/service/client_multiattach_test.go`
+
 Live deployment verification:
 
 - replace `/usr/local/x-ui/x-ui` with the built binary,
@@ -333,7 +337,7 @@ Live deployment verification:
 At the time of writing, the local host has already deployed the patched binary
 through commit:
 
-- `13d42677`
+- `cba23998`
 
 Local live binary:
 
@@ -341,7 +345,7 @@ Local live binary:
 
 Rollback artifact for the latest rollout:
 
-- `/root/backups/20260609T060121Z_xui_fork_patch_deploy_10`
+- `/root/backups/20260609T062201Z_xui_fork_patch_deploy_11`
 
 If this file is later pushed to GitHub, this section can be kept or trimmed;
 the commit history above is the important public part.
@@ -354,7 +358,9 @@ the commit history above is the important public part.
 - fewer destructive “replace-the-whole-client” side effects,
 - correct multi-attach behavior for the most common client mutations,
 - rollback-safe delete behavior when a later attached inbound fails mid-delete,
-- tombstones only after successful delete instead of on failed partial delete.
+- tombstones only after successful delete instead of on failed partial delete,
+- reset-traffic now uses the explicitly requested inbound instead of whichever
+  stale inbound happened to own the shared `ClientTraffic.InboundId` row.
 
 ## Known Limits / Not Yet Closed
 
