@@ -217,7 +217,7 @@ Effect:
   available,
 - the edit modal no longer has to guess safe ordering for multi-step mutation.
 
-### `TBD` - Make direct attach/detach rollback-safe
+### `7dc4d4c4` - Make direct attach/detach rollback-safe
 
 Problem:
 
@@ -291,7 +291,7 @@ Live deployment verification:
 At the time of writing, the local host has already deployed the patched binary
 through commit:
 
-- `d80bd892`
+- `7dc4d4c4`
 
 Local live binary:
 
@@ -299,7 +299,7 @@ Local live binary:
 
 Rollback artifact for the latest rollout:
 
-- `/root/backups/20260609T051634Z_xui_fork_patch_deploy_7`
+- `/root/backups/20260609T052429Z_xui_fork_patch_deploy_8`
 
 If this file is later pushed to GitHub, this section can be kept or trimmed;
 the commit history above is the important public part.
