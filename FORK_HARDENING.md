@@ -328,6 +328,10 @@ And reset prevalidation coverage under:
 
 - `web/service/client_multiattach_test.go`
 
+And canonical shared-client email lookup coverage under:
+
+- `web/service/client_multiattach_test.go`
+
 Live deployment verification:
 
 - replace `/usr/local/x-ui/x-ui` with the built binary,
@@ -341,7 +345,7 @@ Live deployment verification:
 At the time of writing, the local host has already deployed the patched binary
 through commit:
 
-- `f60b738c`
+- `9b7fff2b`
 
 Local live binary:
 
@@ -349,7 +353,7 @@ Local live binary:
 
 Rollback artifact for the latest rollout:
 
-- `/root/backups/20260609T062603Z_xui_fork_patch_deploy_12`
+- `/root/backups/20260609T073917Z_xui_fork_patch_deploy_13`
 
 If this file is later pushed to GitHub, this section can be kept or trimmed;
 the commit history above is the important public part.
@@ -366,7 +370,9 @@ the commit history above is the important public part.
 - reset-traffic now uses the explicitly requested inbound instead of whichever
   stale inbound happened to own the shared `ClientTraffic.InboundId` row,
 - multi-attach traffic reset now prevalidates every attached inbound before the
-  first reset, so a corrupt later attachment cannot partially reset traffic.
+  first reset, so a corrupt later attachment cannot partially reset traffic,
+- shared-client email lookup now resolves through canonical attachments instead
+  of trusting the stale owner stored in `ClientTraffic.InboundId`.
 
 ## Known Limits / Not Yet Closed
 
@@ -374,8 +380,8 @@ These areas still deserve audit:
 
 1. remaining reset flows where runtime-side effects can still drift from DB state,
 2. remaining round-trip mismatches for exotic transport fields,
-3. any path that still treats the first matching inbound as authoritative for a
-   shared client identity.
+3. any remaining path that still trusts stale traffic ownership more than
+   canonical `clients/client_inbounds` membership.
 
 ## Recommended Next Steps
 
@@ -383,5 +389,5 @@ These areas still deserve audit:
    a later attachment fails.
 2. Compare `DB -> config.json -> links/sub` after inbound edits and fix the
    next concrete drift, not broad abstractions.
-3. Keep pushing backend-safe narrow endpoints where the UI currently relies on
-   full-object updates for single-field mutations.
+3. Continue replacing stale traffic-owner lookups with canonical attachment
+   resolution where the service layer still mixes those concepts.
