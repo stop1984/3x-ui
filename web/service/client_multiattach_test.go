@@ -1176,6 +1176,75 @@ func TestDelDepletedClientsRollsBackInlineInboundDeletion(t *testing.T) {
 	}
 }
 
+func TestMigrationRemoveOrphanedTrafficsKeepsDetachedClientRecords(t *testing.T) {
+	setupClientMutationDB(t)
+
+	client := model.Client{
+		ID:         "ae6c78bf-2f3c-4454-97bd-bc1adbb6c7a2",
+		Email:      "migration-detached@example.com",
+		SubID:      "sub-migration-detached",
+		Enable:     true,
+		LimitIP:    1,
+		TotalGB:    1024,
+		ExpiryTime: 4102444800000,
+	}
+	ib1 := seedClientMutationInbound(t, "vless-migration-detached", 33503, client)
+
+	inboundSvc := &InboundService{}
+	clientSvc := &ClientService{}
+	if err := clientSvc.SyncInbound(database.GetDB(), ib1, []model.Client{client}); err != nil {
+		t.Fatalf("SyncInbound ib1: %v", err)
+	}
+	if err := database.GetDB().Create(&xray.ClientTraffic{
+		InboundId:  ib1,
+		Email:      client.Email,
+		Enable:     true,
+		Total:      client.TotalGB,
+		ExpiryTime: client.ExpiryTime,
+	}).Error; err != nil {
+		t.Fatalf("seed traffic: %v", err)
+	}
+	if _, err := inboundSvc.DelInbound(ib1); err != nil {
+		t.Fatalf("DelInbound(%d): %v", ib1, err)
+	}
+
+	inboundSvc.MigrationRemoveOrphanedTraffics()
+
+	traffic, err := inboundSvc.GetClientTrafficByEmail(client.Email)
+	if err != nil {
+		t.Fatalf("GetClientTrafficByEmail after migration: %v", err)
+	}
+	if traffic == nil {
+		t.Fatalf("migration removed detached client traffic for %s", client.Email)
+	}
+}
+
+func TestMigrationRemoveOrphanedTrafficsRemovesTrueOrphans(t *testing.T) {
+	setupClientMutationDB(t)
+
+	inboundSvc := &InboundService{}
+	orphanEmail := "migration-orphan@example.com"
+	if err := database.GetDB().Create(&xray.ClientTraffic{
+		InboundId:  12345,
+		Email:      orphanEmail,
+		Enable:     true,
+		Total:      100,
+		ExpiryTime: 4102444800000,
+	}).Error; err != nil {
+		t.Fatalf("seed orphan traffic: %v", err)
+	}
+
+	inboundSvc.MigrationRemoveOrphanedTraffics()
+
+	traffic, err := inboundSvc.GetClientTrafficByEmail(orphanEmail)
+	if err != nil {
+		t.Fatalf("GetClientTrafficByEmail after migration: %v", err)
+	}
+	if traffic != nil {
+		t.Fatalf("migration kept true orphan traffic for %s", orphanEmail)
+	}
+}
+
 func TestBulkAdjustFallsBackToAtomicAdjustForMultiAttachClient(t *testing.T) {
 	setupClientMutationDB(t)
 

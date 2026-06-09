@@ -2884,12 +2884,16 @@ func (s *InboundService) GetClientReverseTags() (string, error) {
 
 func (s *InboundService) MigrationRemoveOrphanedTraffics() {
 	db := database.GetDB()
-	query := fmt.Sprintf(
-		"DELETE FROM client_traffics WHERE email NOT IN (SELECT %s %s)",
-		database.JSONFieldText("client.value", "email"),
-		database.JSONClientsFromInbound(),
-	)
-	db.Exec(query)
+	// The canonical owner of client identities is the central clients table, not
+	// the embedded inbound JSON. A client may be intentionally detached from all
+	// inbounds (for example after deleting an inbound while preserving clients for
+	// later re-attach) and should keep its shared traffic row. MigrationRequirements
+	// syncs embedded inbound clients into clients first, so by the time this runs
+	// every live inbound client already exists centrally.
+	query := "DELETE FROM client_traffics WHERE email IS NULL OR email NOT IN (SELECT email FROM clients)"
+	if err := db.Exec(query).Error; err != nil {
+		logger.Warning("MigrationRemoveOrphanedTraffics:", err)
+	}
 }
 
 // AddClientStat inserts a per-client accounting row, no-op on email
