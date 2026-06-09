@@ -9,6 +9,7 @@ import (
 	"github.com/mhsanaei/3x-ui/v3/database"
 	"github.com/mhsanaei/3x-ui/v3/database/model"
 	xuilogger "github.com/mhsanaei/3x-ui/v3/logger"
+	"github.com/mhsanaei/3x-ui/v3/web/runtime"
 	"github.com/mhsanaei/3x-ui/v3/xray"
 	"github.com/op/go-logging"
 )
@@ -18,6 +19,8 @@ var clientMutationLoggerOnce sync.Once
 func setupClientMutationDB(t *testing.T) {
 	t.Helper()
 	clientMutationLoggerOnce.Do(func() { xuilogger.InitLogger(logging.ERROR) })
+	prevManager := runtime.GetManager()
+	runtime.SetManager(nil)
 
 	dbDir := t.TempDir()
 	t.Setenv("XUI_DB_FOLDER", dbDir)
@@ -25,6 +28,7 @@ func setupClientMutationDB(t *testing.T) {
 		t.Fatalf("InitDB: %v", err)
 	}
 	t.Cleanup(func() {
+		runtime.SetManager(prevManager)
 		if err := database.CloseDB(); err != nil {
 			t.Logf("CloseDB warning: %v", err)
 		}
