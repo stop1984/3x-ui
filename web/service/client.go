@@ -2354,24 +2354,6 @@ func (s *ClientService) AddToGroup(emails []string, group string) (int, error) {
 	}
 	db := database.GetDB()
 
-	if group != "" {
-		var exists int64
-		if err := db.Model(&model.ClientGroup{}).Where("name = ?", group).Count(&exists).Error; err != nil {
-			return 0, err
-		}
-		if exists == 0 {
-			var derived int64
-			if err := db.Model(&model.ClientRecord{}).Where("group_name = ?", group).Count(&derived).Error; err != nil {
-				return 0, err
-			}
-			if derived == 0 {
-				if err := db.Create(&model.ClientGroup{Name: group}).Error; err != nil {
-					return 0, err
-				}
-			}
-		}
-	}
-
 	var records []model.ClientRecord
 	for _, batch := range chunkStrings(emails, sqlInChunk) {
 		var rows []model.ClientRecord
@@ -2389,6 +2371,26 @@ func (s *ClientService) AddToGroup(emails []string, group string) (int, error) {
 	}
 
 	tx := db.Begin()
+	if group != "" {
+		var exists int64
+		if err := tx.Model(&model.ClientGroup{}).Where("name = ?", group).Count(&exists).Error; err != nil {
+			tx.Rollback()
+			return 0, err
+		}
+		if exists == 0 {
+			var derived int64
+			if err := tx.Model(&model.ClientRecord{}).Where("group_name = ?", group).Count(&derived).Error; err != nil {
+				tx.Rollback()
+				return 0, err
+			}
+			if derived == 0 {
+				if err := tx.Create(&model.ClientGroup{Name: group}).Error; err != nil {
+					tx.Rollback()
+					return 0, err
+				}
+			}
+		}
+	}
 	for _, batch := range chunkStrings(affectedEmails, sqlInChunk) {
 		if err := tx.Model(&model.ClientRecord{}).
 			Where("email IN ?", batch).
@@ -2431,11 +2433,13 @@ func (s *ClientService) AddToGroup(emails []string, group string) (int, error) {
 		}
 		var settings map[string]any
 		if err := json.Unmarshal([]byte(ib.Settings), &settings); err != nil {
-			continue
+			tx.Rollback()
+			return 0, err
 		}
 		clients, ok := settings["clients"].([]any)
 		if !ok {
-			continue
+			tx.Rollback()
+			return 0, common.NewError("invalid clients format in inbound settings")
 		}
 		modified := false
 		for i := range clients {
@@ -2459,7 +2463,8 @@ func (s *ClientService) AddToGroup(emails []string, group string) (int, error) {
 			settings["clients"] = clients
 			newSettings, err := json.Marshal(settings)
 			if err != nil {
-				continue
+				tx.Rollback()
+				return 0, err
 			}
 			ib.Settings = string(newSettings)
 			if err := tx.Save(&ib).Error; err != nil {
@@ -2477,15 +2482,6 @@ func (s *ClientService) AddToGroup(emails []string, group string) (int, error) {
 
 func (s *ClientService) replaceGroupValue(oldName, newName string) (int, error) {
 	db := database.GetDB()
-	if newName == "" {
-		if err := db.Where("name = ?", oldName).Delete(&model.ClientGroup{}).Error; err != nil {
-			return 0, err
-		}
-	} else {
-		if err := db.Model(&model.ClientGroup{}).Where("name = ?", oldName).Update("name", newName).Error; err != nil {
-			return 0, err
-		}
-	}
 	var records []model.ClientRecord
 	if err := db.Where("group_name = ?", oldName).Find(&records).Error; err != nil {
 		return 0, err
@@ -2499,6 +2495,17 @@ func (s *ClientService) replaceGroupValue(oldName, newName string) (int, error) 
 	}
 
 	tx := db.Begin()
+	if newName == "" {
+		if err := tx.Where("name = ?", oldName).Delete(&model.ClientGroup{}).Error; err != nil {
+			tx.Rollback()
+			return 0, err
+		}
+	} else {
+		if err := tx.Model(&model.ClientGroup{}).Where("name = ?", oldName).Update("name", newName).Error; err != nil {
+			tx.Rollback()
+			return 0, err
+		}
+	}
 	if err := tx.Model(&model.ClientRecord{}).
 		Where("group_name = ?", oldName).
 		UpdateColumn("group_name", newName).Error; err != nil {
@@ -2534,11 +2541,13 @@ func (s *ClientService) replaceGroupValue(oldName, newName string) (int, error) 
 		}
 		var settings map[string]any
 		if err := json.Unmarshal([]byte(ib.Settings), &settings); err != nil {
-			continue
+			tx.Rollback()
+			return 0, err
 		}
 		clients, ok := settings["clients"].([]any)
 		if !ok {
-			continue
+			tx.Rollback()
+			return 0, common.NewError("invalid clients format in inbound settings")
 		}
 		modified := false
 		for i := range clients {
@@ -2560,7 +2569,8 @@ func (s *ClientService) replaceGroupValue(oldName, newName string) (int, error) 
 			settings["clients"] = clients
 			newSettings, err := json.Marshal(settings)
 			if err != nil {
-				continue
+				tx.Rollback()
+				return 0, err
 			}
 			ib.Settings = string(newSettings)
 			if err := tx.Save(&ib).Error; err != nil {

@@ -1055,6 +1055,115 @@ func TestBulkAdjustFallsBackToAtomicAdjustForMultiAttachClient(t *testing.T) {
 	}
 }
 
+func TestAddToGroupRollsBackWhenInboundSettingsCorrupt(t *testing.T) {
+	setupClientMutationDB(t)
+
+	client := model.Client{
+		ID:         "879286d8-0f01-464d-b8c5-f8fd35278e54",
+		Email:      "group-add-rollback@example.com",
+		SubID:      "sub-group-add-rollback",
+		Enable:     true,
+		LimitIP:    1,
+		TotalGB:    1024,
+		ExpiryTime: 4102444800000,
+	}
+	ib1 := seedClientMutationInbound(t, "vless-group-add-a", 35443, client)
+
+	clientSvc := &ClientService{}
+	if err := clientSvc.SyncInbound(database.GetDB(), ib1, []model.Client{client}); err != nil {
+		t.Fatalf("SyncInbound ib1: %v", err)
+	}
+
+	var corrupt model.Inbound
+	if err := database.GetDB().First(&corrupt, ib1).Error; err != nil {
+		t.Fatalf("load inbound %d: %v", ib1, err)
+	}
+	corrupt.Settings = `{"clients":`
+	if err := database.GetDB().Save(&corrupt).Error; err != nil {
+		t.Fatalf("corrupt inbound %d: %v", ib1, err)
+	}
+
+	if _, err := clientSvc.AddToGroup([]string{client.Email}, "grp-rollback"); err == nil {
+		t.Fatalf("AddToGroup unexpectedly succeeded")
+	}
+
+	rec, err := clientSvc.GetRecordByEmail(nil, client.Email)
+	if err != nil {
+		t.Fatalf("GetRecordByEmail: %v", err)
+	}
+	if rec.Group != "" {
+		t.Fatalf("client record group = %q, want empty after rollback", rec.Group)
+	}
+
+	var count int64
+	if err := database.GetDB().Model(&model.ClientGroup{}).Where("name = ?", "grp-rollback").Count(&count).Error; err != nil {
+		t.Fatalf("count group: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("group row count = %d, want 0 after rollback", count)
+	}
+}
+
+func TestRenameGroupRollsBackWhenInboundSettingsCorrupt(t *testing.T) {
+	setupClientMutationDB(t)
+
+	client := model.Client{
+		ID:         "8a5598d2-1d2d-4e59-8a4c-f7ce6178727b",
+		Email:      "group-rename-rollback@example.com",
+		SubID:      "sub-group-rename-rollback",
+		Enable:     true,
+		LimitIP:    1,
+		TotalGB:    1024,
+		ExpiryTime: 4102444800000,
+		Group:      "oldgrp",
+	}
+	ib1 := seedClientMutationInbound(t, "vless-group-rename-a", 36443, client)
+
+	clientSvc := &ClientService{}
+	if err := clientSvc.SyncInbound(database.GetDB(), ib1, []model.Client{client}); err != nil {
+		t.Fatalf("SyncInbound ib1: %v", err)
+	}
+	if err := database.GetDB().Create(&model.ClientGroup{Name: "oldgrp"}).Error; err != nil {
+		t.Fatalf("seed group row: %v", err)
+	}
+
+	var corrupt model.Inbound
+	if err := database.GetDB().First(&corrupt, ib1).Error; err != nil {
+		t.Fatalf("load inbound %d: %v", ib1, err)
+	}
+	corrupt.Settings = `{"clients":`
+	if err := database.GetDB().Save(&corrupt).Error; err != nil {
+		t.Fatalf("corrupt inbound %d: %v", ib1, err)
+	}
+
+	if _, err := clientSvc.RenameGroup("oldgrp", "newgrp"); err == nil {
+		t.Fatalf("RenameGroup unexpectedly succeeded")
+	}
+
+	rec, err := clientSvc.GetRecordByEmail(nil, client.Email)
+	if err != nil {
+		t.Fatalf("GetRecordByEmail: %v", err)
+	}
+	if rec.Group != "oldgrp" {
+		t.Fatalf("client record group = %q, want %q after rollback", rec.Group, "oldgrp")
+	}
+
+	var oldCount int64
+	if err := database.GetDB().Model(&model.ClientGroup{}).Where("name = ?", "oldgrp").Count(&oldCount).Error; err != nil {
+		t.Fatalf("count old group: %v", err)
+	}
+	if oldCount != 1 {
+		t.Fatalf("old group count = %d, want 1 after rollback", oldCount)
+	}
+	var newCount int64
+	if err := database.GetDB().Model(&model.ClientGroup{}).Where("name = ?", "newgrp").Count(&newCount).Error; err != nil {
+		t.Fatalf("count new group: %v", err)
+	}
+	if newCount != 0 {
+		t.Fatalf("new group count = %d, want 0 after rollback", newCount)
+	}
+}
+
 func TestBulkDeleteFallsBackToAtomicDeleteForMultiAttachClient(t *testing.T) {
 	setupClientMutationDB(t)
 
