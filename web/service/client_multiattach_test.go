@@ -9,6 +9,7 @@ import (
 	"github.com/mhsanaei/3x-ui/v3/database"
 	"github.com/mhsanaei/3x-ui/v3/database/model"
 	xuilogger "github.com/mhsanaei/3x-ui/v3/logger"
+	"github.com/mhsanaei/3x-ui/v3/xray"
 	"github.com/op/go-logging"
 )
 
@@ -469,5 +470,69 @@ func TestDeleteRollsBackWhenLaterInboundFails(t *testing.T) {
 	}
 	if isClientEmailTombstoned(client.Email) {
 		t.Fatalf("rollback left tombstone for restored client %s", client.Email)
+	}
+}
+
+func TestResetClientTrafficUsesRequestedInboundForMultiAttachClient(t *testing.T) {
+	setupClientMutationDB(t)
+
+	client := model.Client{
+		ID:         "bf3abff5-2081-45d7-976d-f45b0cebc660",
+		Email:      "reset-multiattach@example.com",
+		SubID:      "sub-reset-multiattach",
+		Enable:     true,
+		LimitIP:    1,
+		TotalGB:    1024,
+		ExpiryTime: 4102444800000,
+	}
+	ib1 := seedClientMutationInbound(t, "vless-reset-a", 23443, client)
+	ib2 := seedClientMutationInbound(t, "vless-reset-b", 24443, client)
+
+	inboundSvc := &InboundService{}
+	clientSvc := &ClientService{}
+	if err := clientSvc.SyncInbound(database.GetDB(), ib1, []model.Client{client}); err != nil {
+		t.Fatalf("SyncInbound ib1: %v", err)
+	}
+	if err := clientSvc.SyncInbound(database.GetDB(), ib2, []model.Client{client}); err != nil {
+		t.Fatalf("SyncInbound ib2: %v", err)
+	}
+
+	traffic := &xray.ClientTraffic{
+		InboundId: ib1,
+		Email:     client.Email,
+		Enable:    false,
+		Up:        123,
+		Down:      456,
+	}
+	if err := database.GetDB().Create(traffic).Error; err != nil {
+		t.Fatalf("seed traffic: %v", err)
+	}
+
+	var corrupt model.Inbound
+	if err := database.GetDB().First(&corrupt, ib1).Error; err != nil {
+		t.Fatalf("load inbound %d: %v", ib1, err)
+	}
+	corrupt.Settings = `{"clients":[]}`
+	if err := database.GetDB().Save(&corrupt).Error; err != nil {
+		t.Fatalf("corrupt inbound %d: %v", ib1, err)
+	}
+
+	needRestart, err := inboundSvc.ResetClientTraffic(ib2, client.Email)
+	if err != nil {
+		t.Fatalf("ResetClientTraffic(%d): %v", ib2, err)
+	}
+	if !needRestart {
+		t.Fatalf("needRestart = false, want true when runtime is absent")
+	}
+
+	var updated xray.ClientTraffic
+	if err := database.GetDB().Where("email = ?", client.Email).First(&updated).Error; err != nil {
+		t.Fatalf("reload traffic: %v", err)
+	}
+	if !updated.Enable {
+		t.Fatalf("traffic enable remained false")
+	}
+	if updated.Up != 0 || updated.Down != 0 {
+		t.Fatalf("traffic counters = up:%d down:%d, want 0/0", updated.Up, updated.Down)
 	}
 }

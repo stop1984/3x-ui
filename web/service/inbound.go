@@ -3080,38 +3080,49 @@ func (s *InboundService) ResetClientTraffic(id int, clientEmail string) (needRes
 func (s *InboundService) resetClientTrafficLocked(id int, clientEmail string) (bool, error) {
 	needRestart := false
 
-	traffic, err := s.GetClientTrafficByEmail(clientEmail)
-	if err != nil {
+	db := database.GetDB()
+	traffic := &xray.ClientTraffic{}
+	if err := db.Where("email = ?", clientEmail).First(traffic).Error; err != nil {
+		logger.Warningf("Error retrieving ClientTraffic with email %s: %v", clientEmail, err)
 		return false, err
 	}
 
+	inbound, err := s.GetInbound(id)
+	if err != nil {
+		return false, err
+	}
+	clients, err := s.GetClients(inbound)
+	if err != nil {
+		return false, err
+	}
+	var matchedClient *model.Client
+	for i := range clients {
+		if clients[i].Email == clientEmail {
+			matchedClient = &clients[i]
+			break
+		}
+	}
+	if matchedClient == nil {
+		return false, common.NewError("Client Not Found In Inbound For Email:", clientEmail)
+	}
+
 	if !traffic.Enable {
-		inbound, err := s.GetInbound(id)
-		if err != nil {
-			return false, err
-		}
-		clients, err := s.GetClients(inbound)
-		if err != nil {
-			return false, err
-		}
-		for _, client := range clients {
-			if client.Email == clientEmail && client.Enable {
-				rt, push, dirty, perr := s.nodePushPlan(inbound)
-				if perr != nil {
-					return false, perr
-				}
-				if !push {
-					if inbound.NodeID != nil {
-						if dirty {
-							if dErr := (&NodeService{}).MarkNodeDirty(*inbound.NodeID); dErr != nil {
-								logger.Warning("mark node dirty failed:", dErr)
-							}
+		if matchedClient.Enable {
+			rt, push, dirty, perr := s.nodePushPlan(inbound)
+			if perr != nil {
+				return false, perr
+			}
+			if !push {
+				if inbound.NodeID != nil {
+					if dirty {
+						if dErr := (&NodeService{}).MarkNodeDirty(*inbound.NodeID); dErr != nil {
+							logger.Warning("mark node dirty failed:", dErr)
 						}
-					} else {
-						needRestart = true
 					}
-					break
+				} else {
+					needRestart = true
 				}
+			} else if rt != nil {
 				cipher := ""
 				if string(inbound.Protocol) == "shadowsocks" {
 					var oldSettings map[string]any
@@ -3122,12 +3133,12 @@ func (s *InboundService) resetClientTrafficLocked(id int, clientEmail string) (b
 					cipher = oldSettings["method"].(string)
 				}
 				err1 := rt.AddUser(context.Background(), inbound, map[string]any{
-					"email":    client.Email,
-					"id":       client.ID,
-					"auth":     client.Auth,
-					"security": client.Security,
-					"flow":     client.Flow,
-					"password": client.Password,
+					"email":    matchedClient.Email,
+					"id":       matchedClient.ID,
+					"auth":     matchedClient.Auth,
+					"security": matchedClient.Security,
+					"flow":     matchedClient.Flow,
+					"password": matchedClient.Password,
 					"cipher":   cipher,
 				})
 				if err1 == nil {
@@ -3141,7 +3152,8 @@ func (s *InboundService) resetClientTrafficLocked(id int, clientEmail string) (b
 					logger.Debug("Error in enabling client on", rt.Name(), ":", err1)
 					needRestart = true
 				}
-				break
+			} else {
+				needRestart = true
 			}
 		}
 	}
@@ -3150,7 +3162,6 @@ func (s *InboundService) resetClientTrafficLocked(id int, clientEmail string) (b
 	traffic.Down = 0
 	traffic.Enable = true
 
-	db := database.GetDB()
 	err = db.Save(traffic).Error
 	if err != nil {
 		return false, err
@@ -3161,7 +3172,7 @@ func (s *InboundService) resetClientTrafficLocked(id int, clientEmail string) (b
 		Where("id = ?", id).
 		Update("last_traffic_reset_time", now).Error
 
-	inbound, err := s.GetInbound(id)
+	inbound, err = s.GetInbound(id)
 	if err == nil && inbound != nil && inbound.NodeID != nil {
 		if rt, rterr := s.runtimeFor(inbound); rterr == nil {
 			if e := rt.ResetClientTraffic(context.Background(), inbound, clientEmail); e != nil {
