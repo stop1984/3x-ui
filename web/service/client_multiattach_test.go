@@ -405,3 +405,69 @@ func TestCreateRollsBackWhenLaterInboundFails(t *testing.T) {
 		t.Fatalf("rollback left orphan client record for %s", client.Email)
 	}
 }
+
+func TestDeleteRollsBackWhenLaterInboundFails(t *testing.T) {
+	setupClientMutationDB(t)
+
+	client := model.Client{
+		ID:         "9b99f2b8-7a2e-4a75-a0c8-e69d77317f65",
+		Email:      "delete-rollback@example.com",
+		SubID:      "sub-delete-rollback",
+		Enable:     true,
+		LimitIP:    1,
+		TotalGB:    1024,
+		ExpiryTime: 4102444800000,
+		Comment:    "stable",
+	}
+	ib1 := seedClientMutationInbound(t, "vless-delete-a", 21443, client)
+	ib2 := seedClientMutationInbound(t, "vless-delete-b", 22443, client)
+
+	inboundSvc := &InboundService{}
+	clientSvc := &ClientService{}
+	if err := clientSvc.SyncInbound(database.GetDB(), ib1, []model.Client{client}); err != nil {
+		t.Fatalf("SyncInbound ib1: %v", err)
+	}
+	if err := clientSvc.SyncInbound(database.GetDB(), ib2, []model.Client{client}); err != nil {
+		t.Fatalf("SyncInbound ib2: %v", err)
+	}
+
+	var corrupt model.Inbound
+	if err := database.GetDB().First(&corrupt, ib2).Error; err != nil {
+		t.Fatalf("load inbound %d: %v", ib2, err)
+	}
+	corrupt.Settings = `{"clients":[]}`
+	if err := database.GetDB().Save(&corrupt).Error; err != nil {
+		t.Fatalf("corrupt inbound %d: %v", ib2, err)
+	}
+
+	rec, err := clientSvc.GetRecordByEmail(nil, client.Email)
+	if err != nil {
+		t.Fatalf("GetRecordByEmail: %v", err)
+	}
+
+	needRestart, err := clientSvc.Delete(inboundSvc, rec.Id, false)
+	if err == nil {
+		t.Fatalf("Delete unexpectedly succeeded")
+	}
+	if !needRestart {
+		t.Fatalf("needRestart = false, want true when runtime is absent")
+	}
+
+	kept, err := clientSvc.GetRecordByEmail(nil, client.Email)
+	if err != nil {
+		t.Fatalf("GetRecordByEmail after rollback: %v", err)
+	}
+	attached, err := clientSvc.GetInboundIdsForRecord(kept.Id)
+	if err != nil {
+		t.Fatalf("GetInboundIdsForRecord: %v", err)
+	}
+	if len(attached) != 2 {
+		t.Fatalf("attached inbounds after rollback = %v, want both original inbounds", attached)
+	}
+	if !inboundHasClientEmail(t, ib1, client.Email) {
+		t.Fatalf("rollback did not restore client on inbound %d", ib1)
+	}
+	if isClientEmailTombstoned(client.Email) {
+		t.Fatalf("rollback left tombstone for restored client %s", client.Email)
+	}
+}

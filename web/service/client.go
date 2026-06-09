@@ -962,19 +962,27 @@ func (s *ClientService) Delete(inboundSvc *InboundService, id int, keepTraffic b
 	if err != nil {
 		return false, err
 	}
-	tombstoneClientEmail(existing.Email)
-
 	inboundIds, err := s.GetInboundIdsForRecord(id)
 	if err != nil {
 		return false, err
 	}
 
 	needRestart := false
+	deletedNow := make([]int, 0, len(inboundIds))
 	for _, ibId := range inboundIds {
 		inbound, getErr := inboundSvc.GetInbound(ibId)
 		if getErr != nil {
 			if errors.Is(getErr, gorm.ErrRecordNotFound) {
 				continue
+			}
+			if len(deletedNow) > 0 {
+				rollbackNeedRestart, rollbackErr := s.rollbackDetach(inboundSvc, existing, deletedNow)
+				if rollbackNeedRestart {
+					needRestart = true
+				}
+				if rollbackErr != nil {
+					return needRestart, fmt.Errorf("delete failed: %w (rollback failed: %v)", getErr, rollbackErr)
+				}
 			}
 			return needRestart, getErr
 		}
@@ -984,11 +992,21 @@ func (s *ClientService) Delete(inboundSvc *InboundService, id int, keepTraffic b
 		}
 		nr, delErr := s.DelInboundClient(inboundSvc, ibId, key, false)
 		if delErr != nil {
+			if len(deletedNow) > 0 {
+				rollbackNeedRestart, rollbackErr := s.rollbackDetach(inboundSvc, existing, deletedNow)
+				if rollbackNeedRestart {
+					needRestart = true
+				}
+				if rollbackErr != nil {
+					return needRestart, fmt.Errorf("delete failed: %w (rollback failed: %v)", delErr, rollbackErr)
+				}
+			}
 			return needRestart, delErr
 		}
 		if nr {
 			needRestart = true
 		}
+		deletedNow = append(deletedNow, ibId)
 	}
 
 	db := database.GetDB()
@@ -1006,6 +1024,7 @@ func (s *ClientService) Delete(inboundSvc *InboundService, id int, keepTraffic b
 	if err := db.Delete(&model.ClientRecord{}, id).Error; err != nil {
 		return needRestart, err
 	}
+	tombstoneClientEmail(existing.Email)
 	return needRestart, nil
 }
 
