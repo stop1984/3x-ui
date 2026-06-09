@@ -195,7 +195,7 @@ export default function ClientsPage() {
     setQuery,
     inbounds, onlines, loading, fetched, fetchError, subSettings,
     ipLimitEnable, tgBotEnable, expireDiff, trafficDiff, pageSize,
-    create, save, update, remove, bulkDelete, bulkAdjust, bulkAddToGroup, bulkRemoveFromGroup, attach, bulkAttach, detach, bulkDetach,
+    create, save, remove, bulkDelete, bulkAdjust, bulkAddToGroup, bulkRemoveFromGroup, bulkAttach, bulkDetach,
     resetTraffic, resetAllTraffics, delDepleted, setEnable,
     applyTrafficEvent, applyClientStatsEvent, applyInvalidate,
     refresh,

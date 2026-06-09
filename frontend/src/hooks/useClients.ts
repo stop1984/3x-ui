@@ -307,7 +307,7 @@ export function useClients() {
   const save = useCallback(async (email: string, payload: { client: unknown; inboundIds: number[] }) => {
     if (!email) return null;
     const encoded = encodeURIComponent(email);
-    const msg = await HttpUtil.post(`/panel/api/clients/save/${encoded}`, payload, JSON_HEADERS) as ApiMsg;
+    const msg = await HttpUtil.post(`/panel/api/clients/save/${encoded}`, payload, JSON_HEADERS) as Msg<unknown>;
     if (msg?.success) await refresh();
     return msg;
   }, [refresh]);
@@ -460,7 +460,7 @@ export function useClients() {
       `/panel/api/clients/setEnable/${encoded}`,
       { enable: !!enable },
       JSON_HEADERS,
-    ) as ApiMsg;
+    ) as Msg<unknown>;
     if (msg?.success) await refresh();
     return msg;
   }, [refresh]);
