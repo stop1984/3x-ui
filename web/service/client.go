@@ -3245,12 +3245,9 @@ func (s *ClientService) BulkDelete(inboundSvc *InboundService, emails []string, 
 		records = append(records, rows...)
 	}
 	recordsByEmail := make(map[string]*model.ClientRecord, len(records))
-	tombstoneEmails := make([]string, 0, len(records))
 	for i := range records {
 		recordsByEmail[records[i].Email] = &records[i]
-		tombstoneEmails = append(tombstoneEmails, records[i].Email)
 	}
-	tombstoneClientEmails(tombstoneEmails)
 
 	skippedReasons := map[string]string{}
 	for _, email := range cleanEmails {
@@ -3266,7 +3263,7 @@ func (s *ClientService) BulkDelete(inboundSvc *InboundService, emails []string, 
 		recordIdToEmail[r.Id] = r.Email
 	}
 
-	emailsByInbound := map[int][]string{}
+	emailInboundSet := map[string]map[int]struct{}{}
 	if len(clientIds) > 0 {
 		var mappings []model.ClientInbound
 		for _, batch := range chunkInts(clientIds, sqlInChunk) {
@@ -3281,11 +3278,37 @@ func (s *ClientService) BulkDelete(inboundSvc *InboundService, emails []string, 
 			if !ok {
 				continue
 			}
-			emailsByInbound[m.InboundId] = append(emailsByInbound[m.InboundId], email)
+			if _, exists := emailInboundSet[email]; !exists {
+				emailInboundSet[email] = map[int]struct{}{}
+			}
+			emailInboundSet[email][m.InboundId] = struct{}{}
 		}
 	}
 
 	needRestart := false
+	deletedByAtomicPath := map[string]struct{}{}
+	emailsByInbound := map[int][]string{}
+	for email, inboundSet := range emailInboundSet {
+		if _, skipped := skippedReasons[email]; skipped {
+			continue
+		}
+		if len(inboundSet) > 1 {
+			nr, err := s.DeleteByEmail(inboundSvc, email, keepTraffic)
+			if err != nil {
+				skippedReasons[email] = err.Error()
+				continue
+			}
+			if nr {
+				needRestart = true
+			}
+			deletedByAtomicPath[email] = struct{}{}
+			continue
+		}
+		for inboundId := range inboundSet {
+			emailsByInbound[inboundId] = append(emailsByInbound[inboundId], email)
+		}
+	}
+
 	for inboundId, ibEmails := range emailsByInbound {
 		ibResult := s.bulkDelInboundClients(inboundSvc, inboundId, ibEmails, recordsByEmail, false)
 		if ibResult.needRestart {
@@ -3301,6 +3324,9 @@ func (s *ClientService) BulkDelete(inboundSvc *InboundService, emails []string, 
 	successEmails := make([]string, 0, len(recordsByEmail))
 	successIds := make([]int, 0, len(recordsByEmail))
 	for email, rec := range recordsByEmail {
+		if _, handled := deletedByAtomicPath[email]; handled {
+			continue
+		}
 		if _, skipped := skippedReasons[email]; skipped {
 			continue
 		}
@@ -3329,9 +3355,10 @@ func (s *ClientService) BulkDelete(inboundSvc *InboundService, emails []string, 
 				return result, needRestart, err
 			}
 		}
+		tombstoneClientEmails(successEmails)
 	}
 
-	result.Deleted = len(successEmails)
+	result.Deleted = len(successEmails) + len(deletedByAtomicPath)
 	for email, reason := range skippedReasons {
 		result.Skipped = append(result.Skipped, BulkDeleteReport{Email: email, Reason: reason})
 	}

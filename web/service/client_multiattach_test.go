@@ -721,3 +721,66 @@ func TestGetClientInboundByTrafficIDSkipsStaleTrafficOwnerInbound(t *testing.T) 
 		t.Fatalf("inbound id = %d, want %d", gotInbound.Id, ib2)
 	}
 }
+
+func TestBulkDeleteFallsBackToAtomicDeleteForMultiAttachClient(t *testing.T) {
+	setupClientMutationDB(t)
+
+	client := model.Client{
+		ID:         "eb4b8282-8c20-4c32-b1d8-6c52c11f49eb",
+		Email:      "bulk-delete-shared@example.com",
+		SubID:      "sub-bulk-delete-shared",
+		Enable:     true,
+		LimitIP:    1,
+		TotalGB:    1024,
+		ExpiryTime: 4102444800000,
+	}
+	ib1 := seedClientMutationInbound(t, "vless-bulk-del-a", 31443, client)
+	ib2 := seedClientMutationInbound(t, "vless-bulk-del-b", 32443, client)
+
+	inboundSvc := &InboundService{}
+	clientSvc := &ClientService{}
+	if err := clientSvc.SyncInbound(database.GetDB(), ib1, []model.Client{client}); err != nil {
+		t.Fatalf("SyncInbound ib1: %v", err)
+	}
+	if err := clientSvc.SyncInbound(database.GetDB(), ib2, []model.Client{client}); err != nil {
+		t.Fatalf("SyncInbound ib2: %v", err)
+	}
+	if err := database.GetDB().Create(&xray.ClientTraffic{
+		InboundId: ib1,
+		Email:     client.Email,
+		Enable:    true,
+		Up:        55,
+		Down:      66,
+	}).Error; err != nil {
+		t.Fatalf("seed traffic: %v", err)
+	}
+
+	var corrupt model.Inbound
+	if err := database.GetDB().First(&corrupt, ib2).Error; err != nil {
+		t.Fatalf("load inbound %d: %v", ib2, err)
+	}
+	corrupt.Settings = "{"
+	if err := database.GetDB().Save(&corrupt).Error; err != nil {
+		t.Fatalf("corrupt inbound %d: %v", ib2, err)
+	}
+
+	result, _, err := clientSvc.BulkDelete(inboundSvc, []string{client.Email}, false)
+	if err != nil {
+		t.Fatalf("BulkDelete: %v", err)
+	}
+	if result.Deleted != 0 {
+		t.Fatalf("deleted = %d, want 0 on failed atomic shared delete", result.Deleted)
+	}
+	if len(result.Skipped) != 1 || result.Skipped[0].Email != client.Email {
+		t.Fatalf("skipped = %+v, want one skipped email %q", result.Skipped, client.Email)
+	}
+	if !inboundHasClientEmail(t, ib1, client.Email) {
+		t.Fatalf("bulk delete partially removed client from inbound %d", ib1)
+	}
+	if _, err := clientSvc.GetRecordByEmail(nil, client.Email); err != nil {
+		t.Fatalf("client record missing after skipped bulk delete: %v", err)
+	}
+	if isClientEmailTombstoned(client.Email) {
+		t.Fatalf("bulk delete left false tombstone for skipped shared client")
+	}
+}
