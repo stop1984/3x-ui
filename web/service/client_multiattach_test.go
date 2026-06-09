@@ -1099,6 +1099,83 @@ func TestDelInboundPreservesRemainingSharedAttachments(t *testing.T) {
 	}
 }
 
+func TestDelDepletedClientsRollsBackInlineInboundDeletion(t *testing.T) {
+	setupClientMutationDB(t)
+
+	depletedClient := model.Client{
+		ID:         "2f2c0d1f-5f9f-4e8c-83d5-c74dd8aef471",
+		Email:      "depleted-inline-delete@example.com",
+		SubID:      "sub-depleted-inline-delete",
+		Enable:     true,
+		LimitIP:    1,
+		TotalGB:    100,
+		ExpiryTime: 4102444800000,
+	}
+	blockingClient := model.Client{
+		ID:         "f4a8a0b2-4b34-4b5d-8965-7a2382ef2d68",
+		Email:      "depleted-inline-block@example.com",
+		SubID:      "sub-depleted-inline-block",
+		Enable:     true,
+		LimitIP:    1,
+		TotalGB:    100,
+		ExpiryTime: 4102444800000,
+	}
+
+	ib1 := seedClientMutationInbound(t, "vless-depleted-inline-a", 33483, depletedClient)
+	ib2 := seedClientMutationInbound(t, "vless-depleted-inline-b", 33493, blockingClient)
+
+	inboundSvc := &InboundService{}
+	clientSvc := &ClientService{}
+	if err := clientSvc.SyncInbound(database.GetDB(), ib1, []model.Client{depletedClient}); err != nil {
+		t.Fatalf("SyncInbound ib1: %v", err)
+	}
+	if err := clientSvc.SyncInbound(database.GetDB(), ib2, []model.Client{blockingClient}); err != nil {
+		t.Fatalf("SyncInbound ib2: %v", err)
+	}
+	if err := database.GetDB().Create(&xray.ClientTraffic{
+		InboundId:  ib1,
+		Email:      depletedClient.Email,
+		Enable:     true,
+		Total:      100,
+		Up:         100,
+		ExpiryTime: depletedClient.ExpiryTime,
+	}).Error; err != nil {
+		t.Fatalf("seed depleted traffic: %v", err)
+	}
+
+	var corrupt model.Inbound
+	if err := database.GetDB().First(&corrupt, ib2).Error; err != nil {
+		t.Fatalf("load inbound %d: %v", ib2, err)
+	}
+	corrupt.Settings = "{"
+	if err := database.GetDB().Save(&corrupt).Error; err != nil {
+		t.Fatalf("corrupt inbound %d: %v", ib2, err)
+	}
+
+	if err := inboundSvc.DelDepletedClients(-1); err == nil {
+		t.Fatalf("DelDepletedClients unexpectedly succeeded")
+	}
+
+	var keptInbound model.Inbound
+	if err := database.GetDB().First(&keptInbound, ib1).Error; err != nil {
+		t.Fatalf("rollback did not restore inbound %d: %v", ib1, err)
+	}
+	if !inboundHasClientEmail(t, ib1, depletedClient.Email) {
+		t.Fatalf("rollback left inbound %d without client %s", ib1, depletedClient.Email)
+	}
+	rec, err := clientSvc.GetRecordByEmail(nil, depletedClient.Email)
+	if err != nil {
+		t.Fatalf("GetRecordByEmail after rollback: %v", err)
+	}
+	attached, err := clientSvc.GetInboundIdsForRecord(rec.Id)
+	if err != nil {
+		t.Fatalf("GetInboundIdsForRecord: %v", err)
+	}
+	if len(attached) != 1 || attached[0] != ib1 {
+		t.Fatalf("attached inbounds after rollback = %v, want [%d]", attached, ib1)
+	}
+}
+
 func TestBulkAdjustFallsBackToAtomicAdjustForMultiAttachClient(t *testing.T) {
 	setupClientMutationDB(t)
 

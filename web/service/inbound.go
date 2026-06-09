@@ -3395,7 +3395,7 @@ func (s *InboundService) DelDepletedClients(id int) (err error) {
 	}
 
 	var inbounds []*model.Inbound
-	inboundQuery := db.Model(model.Inbound{})
+	inboundQuery := db.Model(model.Inbound{}).Order("id ASC")
 	if id >= 0 {
 		inboundQuery = inboundQuery.Where("id = ?", id)
 	}
@@ -3431,7 +3431,16 @@ func (s *InboundService) DelDepletedClients(id int) (err error) {
 			continue
 		}
 		if len(newClients) == 0 {
-			s.DelInbound(inbound.Id)
+			// Keep the whole depleted-client sweep atomic. Calling DelInbound()
+			// here would open a separate write path, detach/delete the inbound
+			// outside this transaction, and then a later error in the sweep would
+			// leave a partially applied result behind.
+			if err = s.clientService.DetachInbound(tx, inbound.Id); err != nil {
+				return err
+			}
+			if err = tx.Where("id = ?", inbound.Id).Delete(&model.Inbound{}).Error; err != nil {
+				return err
+			}
 			continue
 		}
 		settings["clients"] = newClients
