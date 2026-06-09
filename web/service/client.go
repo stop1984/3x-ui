@@ -1617,7 +1617,7 @@ func (s *ClientService) rollbackAttach(inboundSvc *InboundService, existing *mod
 		if key == "" {
 			continue
 		}
-		nr, err := s.DelInboundClient(inboundSvc, ibID, key)
+		nr, err := s.DelInboundClient(inboundSvc, ibID, key, false)
 		if err != nil {
 			return needRestart, err
 		}
