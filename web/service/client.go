@@ -843,6 +843,7 @@ func (s *ClientService) Update(inboundSvc *InboundService, id int, updated model
 	if err != nil {
 		return false, err
 	}
+	allInboundIds := append([]int(nil), inboundIds...)
 	if len(inboundFilter) > 0 {
 		allow := make(map[int]struct{}, len(inboundFilter))
 		for _, fid := range inboundFilter {
@@ -855,6 +856,9 @@ func (s *ClientService) Update(inboundSvc *InboundService, id int, updated model
 			}
 		}
 		inboundIds = filtered
+		if len(inboundIds) != len(allInboundIds) {
+			return false, common.NewError("partial inbound-scoped client update is not supported; use save/attach/detach for multi-inbound clients")
+		}
 	}
 
 	if strings.TrimSpace(updated.Email) == "" {

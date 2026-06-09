@@ -338,6 +338,65 @@ func TestUpdateRollsBackWhenLaterInboundFails(t *testing.T) {
 	}
 }
 
+func TestUpdateRejectsPartialInboundFilterForSharedClient(t *testing.T) {
+	setupClientMutationDB(t)
+
+	client := model.Client{
+		ID:         "9f97406e-5ac4-454b-b5c0-b41c511dd0ef",
+		Email:      "update-filter@example.com",
+		SubID:      "sub-update-filter",
+		Enable:     true,
+		LimitIP:    1,
+		TotalGB:    1024,
+		ExpiryTime: 4102444800000,
+		Comment:    "before",
+	}
+	ib1 := seedClientMutationInbound(t, "vless-update-filter-a", 14643, client)
+	ib2 := seedClientMutationInbound(t, "vless-update-filter-b", 15643, client)
+
+	inboundSvc := &InboundService{}
+	clientSvc := &ClientService{}
+	if err := clientSvc.SyncInbound(database.GetDB(), ib1, []model.Client{client}); err != nil {
+		t.Fatalf("SyncInbound ib1: %v", err)
+	}
+	if err := clientSvc.SyncInbound(database.GetDB(), ib2, []model.Client{client}); err != nil {
+		t.Fatalf("SyncInbound ib2: %v", err)
+	}
+
+	rec, err := clientSvc.GetRecordByEmail(nil, client.Email)
+	if err != nil {
+		t.Fatalf("GetRecordByEmail: %v", err)
+	}
+
+	updated := client
+	updated.Comment = "after"
+
+	needRestart, err := clientSvc.Update(inboundSvc, rec.Id, updated, ib1)
+	if err == nil {
+		t.Fatalf("Update unexpectedly succeeded with partial inbound filter")
+	}
+	if needRestart {
+		t.Fatalf("needRestart = true, want false when update is rejected before mutation")
+	}
+
+	kept, err := clientSvc.GetRecordByEmail(nil, client.Email)
+	if err != nil {
+		t.Fatalf("GetRecordByEmail rollback state: %v", err)
+	}
+	if kept.Comment != "before" {
+		t.Fatalf("client record comment = %q, want %q", kept.Comment, "before")
+	}
+
+	c1 := inboundClientByEmail(t, ib1, client.Email)
+	c2 := inboundClientByEmail(t, ib2, client.Email)
+	if c1.Comment != "before" {
+		t.Fatalf("inbound %d comment = %q, want %q", ib1, c1.Comment, "before")
+	}
+	if c2.Comment != "before" {
+		t.Fatalf("inbound %d comment = %q, want %q", ib2, c2.Comment, "before")
+	}
+}
+
 func TestAttachRollsBackWhenLaterInboundFails(t *testing.T) {
 	setupClientMutationDB(t)
 
