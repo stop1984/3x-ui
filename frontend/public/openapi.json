@@ -4496,6 +4496,132 @@
         }
       }
     },
+    "/panel/api/clients/save/{email}": {
+      "post": {
+        "tags": [
+          "Clients"
+        ],
+        "summary": "Atomically apply a full client edit together with the desired attached inbound set. The backend updates the client, syncs attachments, and attempts a compensating rollback if attachment sync fails after the client body was already changed.",
+        "operationId": "post_panel_api_clients_save_email",
+        "parameters": [
+          {
+            "name": "email",
+            "in": "path",
+            "required": true,
+            "description": "Current client email (unique identifier).",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              },
+              "example": {
+                "client": {
+                  "email": "alice@example.com",
+                  "totalGB": 107374182400,
+                  "expiryTime": 1767225600000,
+                  "tgId": 123456789,
+                  "enable": true
+                },
+                "inboundIds": [
+                  3,
+                  5
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "msg": "Client updated"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/clients/setEnable/{email}": {
+      "post": {
+        "tags": [
+          "Clients"
+        ],
+        "summary": "Flip only the enable flag for one client. Unlike /update, this endpoint never requires the full client payload and applies the change across every attached inbound.",
+        "operationId": "post_panel_api_clients_setEnable_email",
+        "parameters": [
+          {
+            "name": "email",
+            "in": "path",
+            "required": true,
+            "description": "Current client email (unique identifier).",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              },
+              "example": {
+                "enable": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "msg": "Client updated"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/panel/api/clients/del/{email}": {
       "post": {
         "tags": [
