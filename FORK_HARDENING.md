@@ -316,6 +316,10 @@ And multi-inbound create/copy rollback coverage under:
 - `web/service/client_multiattach_test.go`
 - `web/service/inbound_copy_test.go`
 
+And delete rollback coverage under:
+
+- `web/service/client_multiattach_test.go`
+
 Live deployment verification:
 
 - replace `/usr/local/x-ui/x-ui` with the built binary,
@@ -329,7 +333,7 @@ Live deployment verification:
 At the time of writing, the local host has already deployed the patched binary
 through commit:
 
-- `d57fe3e5`
+- `13d42677`
 
 Local live binary:
 
@@ -337,7 +341,7 @@ Local live binary:
 
 Rollback artifact for the latest rollout:
 
-- `/root/backups/20260609T054847Z_xui_fork_patch_deploy_9`
+- `/root/backups/20260609T060121Z_xui_fork_patch_deploy_10`
 
 If this file is later pushed to GitHub, this section can be kept or trimmed;
 the commit history above is the important public part.
@@ -348,20 +352,22 @@ the commit history above is the important public part.
 - safer transport/security transitions,
 - fewer stale frontend snapshots,
 - fewer destructive “replace-the-whole-client” side effects,
-- correct multi-attach behavior for the most common client mutations.
+- correct multi-attach behavior for the most common client mutations,
+- rollback-safe delete behavior when a later attached inbound fails mid-delete,
+- tombstones only after successful delete instead of on failed partial delete.
 
 ## Known Limits / Not Yet Closed
 
 These areas still deserve audit:
 
-1. remaining multi-step delete/reset flows that can still partially apply,
+1. remaining multi-step reset flows that can still partially apply,
 2. remaining round-trip mismatches for exotic transport fields,
 3. any path that still treats the first matching inbound as authoritative for a
    shared client identity.
 
 ## Recommended Next Steps
 
-1. Audit remaining multi-step delete/reset flows for the same partial-apply class.
+1. Audit remaining multi-step reset flows for the same partial-apply class.
 2. Compare `DB -> config.json -> links/sub` after inbound edits and fix the
    next concrete drift, not broad abstractions.
 3. Keep pushing backend-safe narrow endpoints where the UI currently relies on
