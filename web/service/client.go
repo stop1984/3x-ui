@@ -1162,6 +1162,7 @@ type BulkAttachResult struct {
 // present on a target as skipped.
 func (s *ClientService) BulkAttach(inboundSvc *InboundService, emails []string, inboundIds []int) (*BulkAttachResult, bool, error) {
 	result := &BulkAttachResult{}
+	inboundIds = normalizeInboundIDs(inboundIds)
 	if len(emails) == 0 || len(inboundIds) == 0 {
 		return result, false, nil
 	}
@@ -1268,6 +1269,7 @@ type BulkDetachResult struct {
 // (matches single-client detach semantics); callers should use bulkDelete for full removal.
 func (s *ClientService) BulkDetach(inboundSvc *InboundService, emails []string, inboundIds []int) (*BulkDetachResult, bool, error) {
 	result := &BulkDetachResult{}
+	inboundIds = normalizeInboundIDs(inboundIds)
 	if len(emails) == 0 || len(inboundIds) == 0 {
 		return result, false, nil
 	}
@@ -3642,6 +3644,7 @@ func (s *ClientService) BulkCreate(inboundSvc *InboundService, payloads []Client
 
 	for i := range payloads {
 		client := payloads[i].Client
+		inboundIDs := normalizeInboundIDs(payloads[i].InboundIds)
 		email := strings.TrimSpace(client.Email)
 		if email == "" {
 			skip("", "client email is required")
@@ -3655,7 +3658,7 @@ func (s *ClientService) BulkCreate(inboundSvc *InboundService, payloads []Client
 			skip(email, verr.Error())
 			continue
 		}
-		if len(payloads[i].InboundIds) == 0 {
+		if len(inboundIDs) == 0 {
 			skip(email, "at least one inbound is required")
 			continue
 		}
@@ -3685,7 +3688,7 @@ func (s *ClientService) BulkCreate(inboundSvc *InboundService, payloads []Client
 		seenEmail[le] = struct{}{}
 		seenSubID[client.SubID] = le
 
-		prep = append(prep, prepared{client: client, inboundIds: payloads[i].InboundIds})
+		prep = append(prep, prepared{client: client, inboundIds: inboundIDs})
 		emails = append(emails, email)
 		subIDs = append(subIDs, client.SubID)
 	}

@@ -784,3 +784,46 @@ func TestBulkDeleteFallsBackToAtomicDeleteForMultiAttachClient(t *testing.T) {
 		t.Fatalf("bulk delete left false tombstone for skipped shared client")
 	}
 }
+
+func TestBulkCreateNormalizesDuplicateInboundIDs(t *testing.T) {
+	setupClientMutationDB(t)
+
+	inboundSvc := &InboundService{}
+	clientSvc := &ClientService{}
+	ib1 := seedClientMutationInboundClients(t, "vless-bulk-create-norm", 33443, nil)
+
+	result, needRestart, err := clientSvc.BulkCreate(inboundSvc, []ClientCreatePayload{{
+		Client: model.Client{
+			Email:      "bulk-create-norm@example.com",
+			Enable:     true,
+			LimitIP:    1,
+			TotalGB:    1024,
+			ExpiryTime: 4102444800000,
+		},
+		InboundIds: []int{ib1, ib1, ib1},
+	}})
+	if err != nil {
+		t.Fatalf("BulkCreate: %v", err)
+	}
+	if !needRestart {
+		t.Fatalf("needRestart = false, want true when local inbound mutation happened without active runtime")
+	}
+	if result.Created != 1 {
+		t.Fatalf("created = %d, want 1", result.Created)
+	}
+
+	rec, err := clientSvc.GetRecordByEmail(nil, "bulk-create-norm@example.com")
+	if err != nil {
+		t.Fatalf("GetRecordByEmail: %v", err)
+	}
+	attached, err := clientSvc.GetInboundIdsForRecord(rec.Id)
+	if err != nil {
+		t.Fatalf("GetInboundIdsForRecord: %v", err)
+	}
+	if len(attached) != 1 || attached[0] != ib1 {
+		t.Fatalf("attached inbounds = %v, want [%d]", attached, ib1)
+	}
+	if !inboundHasClientEmail(t, ib1, rec.Email) {
+		t.Fatalf("created client missing from inbound %d", ib1)
+	}
+}
