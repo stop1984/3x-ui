@@ -2,19 +2,48 @@
 
 This document tracks the source-level hardening work applied to the local
 `3x-ui` fork instead of continuing to patch the panel via direct SQLite edits.
+It started as a `v3.1.0` hardening branch and was later manually rebased onto
+upstream `v3.3.0`.
 
 The goal is straightforward:
 
 - reduce `DB -> runtime config -> subscription -> UI` drift,
 - eliminate destructive partial-update paths,
-- keep behavior compatible with the upstream `v3.1.0` data model,
+- keep behavior compatible with the active upstream branch without losing the
+  local hardening guarantees,
 - deploy only changes that were built, tested, and verified live.
 
 ## Scope
 
-- Upstream base: `3x-ui v3.1.0`
+- Current upstream base: `3x-ui v3.3.0`
 - Local repo: `/root/src/3x-ui-fork`
-- Working branch: `fork/v3.1.0-hardening`
+- Current working branch: `fork/v3.3.0-hardening`
+
+## Rebase Status
+
+The original hardening work was done on top of `v3.1.0`. During the manual
+rebase to `v3.3.0`, some earlier fixes fell into three buckets:
+
+1. kept as-is because upstream still had the same bug class,
+2. adapted because the frontend/backend architecture changed,
+3. dropped as obsolete where upstream had already replaced the old code path.
+
+### Rebase-only adaptation commits
+
+These commits are not part of the original `v3.1.0` hardening pass. They were
+added while integrating the fork onto `v3.3.0`.
+
+- `daf46bbe` - fix `DelInboundClient(..., forceRemove bool)` signature drift in
+  rollback attach path after upstream changed the service API.
+- `ecacc8f2` - adapt the subscription membership regression to the new
+  `SubService.GetSubs(...)` return signature in `v3.3.0`.
+- `2e3f3e5c` - fix frontend typing after the rebased client-save path landed in
+  the newer React/Query stack.
+- `08163eb1` - resolve traffic-owner lookups through canonical attached
+  inbounds for both traffic-id and email lookups, instead of trusting stale
+  `client_traffic.inbound_id`.
+- `728f89a2` - sync generated OpenAPI docs so the repo reflects the new
+  hardened client endpoints.
 
 ## Principles
 
