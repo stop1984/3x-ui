@@ -248,6 +248,39 @@ Effect:
 - the rollback safety now exists below the modal/orchestration layer instead of
   only above it.
 
+### `TBD` - Harden multi-inbound create and copy paths
+
+Problem:
+
+- `ClientService.Create` fanned a new client out across many inbounds with no
+  rollback, so a failure on the second or third inbound could leave:
+  - one attached inbound already mutated,
+  - a partially-created shared client record,
+  - leftover attachment state that the caller did not ask for.
+- `InboundService.CopyInboundClients` also had a hidden source-side effect:
+  - if the source client had an empty `subId`, copy generated one and wrote it
+    back to the source before the target add succeeded,
+  - if target add then failed, the copy operation returned an error but the
+    source had already been mutated.
+
+What changed:
+
+- added rollback handling to multi-inbound `Create`:
+  - if a later inbound fails, already-created attachments are detached again,
+  - orphaned shared client records and leftover traffic/IP state are cleaned up,
+- made copy generation side-effect free on the source side:
+  - missing `subId` values are generated for the target copy payload only,
+  - source client state is no longer written back as part of copy preparation,
+- added regression tests for:
+  - create success on the first inbound + failure on a later inbound,
+  - copy failure on target add while the source client has an empty `subId`.
+
+Effect:
+
+- multi-inbound create now behaves transaction-like at the service layer,
+- failed copy operations no longer leave hidden source `subId` mutations behind,
+- fewer partially-created shared-client rows survive a failed create/copy path.
+
 ## Tests and Verification
 
 Every deployed pass was gated by build/test verification.
@@ -277,6 +310,11 @@ And edit/attachment rollback coverage under:
 And direct attach/detach rollback coverage under:
 
 - `web/service/client_multiattach_test.go`
+
+And multi-inbound create/copy rollback coverage under:
+
+- `web/service/client_multiattach_test.go`
+- `web/service/inbound_copy_test.go`
 
 Live deployment verification:
 
@@ -316,14 +354,14 @@ the commit history above is the important public part.
 
 These areas still deserve audit:
 
-1. client create/copy flows that still fan out across many inbounds,
+1. remaining multi-step delete/reset flows that can still partially apply,
 2. remaining round-trip mismatches for exotic transport fields,
 3. any path that still treats the first matching inbound as authoritative for a
    shared client identity.
 
 ## Recommended Next Steps
 
-1. Audit remaining multi-inbound create/copy flows for the same partial-apply class.
+1. Audit remaining multi-step delete/reset flows for the same partial-apply class.
 2. Compare `DB -> config.json -> links/sub` after inbound edits and fix the
    next concrete drift, not broad abstractions.
 3. Keep pushing backend-safe narrow endpoints where the UI currently relies on

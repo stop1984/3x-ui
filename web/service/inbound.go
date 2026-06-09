@@ -1484,17 +1484,6 @@ func (s *InboundService) getClientPrimaryKey(protocol model.Protocol, client mod
 	}
 }
 
-func (s *InboundService) writeBackClientSubID(client model.Client, subID string) (bool, error) {
-	if strings.TrimSpace(client.Email) == "" {
-		return false, common.NewError("client email is required")
-	}
-	needRestart, _, err := s.clientService.mutateByEmail(s, client.Email, func(target *model.Client) error {
-		target.SubID = subID
-		return nil
-	})
-	return needRestart, err
-}
-
 func (s *InboundService) generateRandomCredential(targetProtocol model.Protocol) string {
 	switch targetProtocol {
 	case model.VMESS, model.VLESS:
@@ -1611,16 +1600,7 @@ func (s *InboundService) CopyInboundClients(targetInboundID int, sourceInboundID
 		}
 
 		if sourceClient.SubID == "" {
-			newSubID := uuid.NewString()
-			subNeedRestart, subErr := s.writeBackClientSubID(sourceClient, newSubID)
-			if subErr != nil {
-				result.Errors = append(result.Errors, fmt.Sprintf("%s: failed to write source subId: %v", originalEmail, subErr))
-				continue
-			}
-			if subNeedRestart {
-				needRestart = true
-			}
-			sourceClient.SubID = newSubID
+			sourceClient.SubID = uuid.NewString()
 		}
 
 		targetEmail := s.nextAvailableCopiedEmail(originalEmail, targetInboundID, occupiedEmails)

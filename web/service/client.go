@@ -558,6 +558,35 @@ func (s *ClientService) HasPendingNode(inboundSvc *InboundService, email string)
 	return inboundSvc.AnyNodePending(ids)
 }
 
+func (s *ClientService) cleanupOrphanClientByEmail(email string) error {
+	email = strings.TrimSpace(email)
+	if email == "" {
+		return nil
+	}
+	db := database.GetDB()
+	rec, err := s.GetRecordByEmail(db, email)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return err
+	}
+	var attachmentCount int64
+	if err := db.Table("client_inbounds").Where("client_id = ?", rec.Id).Count(&attachmentCount).Error; err != nil {
+		return err
+	}
+	if attachmentCount > 0 {
+		return nil
+	}
+	if err := db.Where("email = ?", email).Delete(&xray.ClientTraffic{}).Error; err != nil {
+		return err
+	}
+	if err := db.Where("client_email = ?", email).Delete(&model.InboundClientIps{}).Error; err != nil {
+		return err
+	}
+	return db.Delete(&model.ClientRecord{}, rec.Id).Error
+}
+
 func (s *ClientService) Create(inboundSvc *InboundService, payload *ClientCreatePayload) (bool, error) {
 	if payload == nil {
 		return false, common.NewError("empty payload")
@@ -572,6 +601,7 @@ func (s *ClientService) Create(inboundSvc *InboundService, payload *ClientCreate
 	if err := validateClientSubID(client.SubID); err != nil {
 		return false, err
 	}
+	payload.InboundIds = normalizeInboundIDs(payload.InboundIds)
 	if len(payload.InboundIds) == 0 {
 		return false, common.NewError("at least one inbound is required")
 	}
@@ -613,16 +643,62 @@ func (s *ClientService) Create(inboundSvc *InboundService, payload *ClientCreate
 	}
 
 	needRestart := false
+	createdOn := make([]int, 0, len(payload.InboundIds))
 	for _, ibId := range payload.InboundIds {
 		inbound, getErr := inboundSvc.GetInbound(ibId)
 		if getErr != nil {
+			if len(createdOn) > 0 {
+				rollbackRec, recErr := s.GetRecordByEmail(nil, client.Email)
+				if recErr == nil {
+					rollbackNeedRestart, rollbackErr := s.rollbackAttach(inboundSvc, rollbackRec, createdOn)
+					if rollbackNeedRestart {
+						needRestart = true
+					}
+					if rollbackErr != nil {
+						return needRestart, fmt.Errorf("create failed: %w (rollback failed: %v)", getErr, rollbackErr)
+					}
+				}
+				if cleanupErr := s.cleanupOrphanClientByEmail(client.Email); cleanupErr != nil {
+					return needRestart, fmt.Errorf("create failed: %w (cleanup failed: %v)", getErr, cleanupErr)
+				}
+			}
 			return needRestart, getErr
 		}
 		if err := s.fillProtocolDefaults(&client, inbound); err != nil {
+			if len(createdOn) > 0 {
+				rollbackRec, recErr := s.GetRecordByEmail(nil, client.Email)
+				if recErr == nil {
+					rollbackNeedRestart, rollbackErr := s.rollbackAttach(inboundSvc, rollbackRec, createdOn)
+					if rollbackNeedRestart {
+						needRestart = true
+					}
+					if rollbackErr != nil {
+						return needRestart, fmt.Errorf("create failed: %w (rollback failed: %v)", err, rollbackErr)
+					}
+				}
+				if cleanupErr := s.cleanupOrphanClientByEmail(client.Email); cleanupErr != nil {
+					return needRestart, fmt.Errorf("create failed: %w (cleanup failed: %v)", err, cleanupErr)
+				}
+			}
 			return needRestart, err
 		}
 		settingsPayload, mErr := json.Marshal(map[string][]model.Client{"clients": {clientWithInboundFlow(client, inbound)}})
 		if mErr != nil {
+			if len(createdOn) > 0 {
+				rollbackRec, recErr := s.GetRecordByEmail(nil, client.Email)
+				if recErr == nil {
+					rollbackNeedRestart, rollbackErr := s.rollbackAttach(inboundSvc, rollbackRec, createdOn)
+					if rollbackNeedRestart {
+						needRestart = true
+					}
+					if rollbackErr != nil {
+						return needRestart, fmt.Errorf("create failed: %w (rollback failed: %v)", mErr, rollbackErr)
+					}
+				}
+				if cleanupErr := s.cleanupOrphanClientByEmail(client.Email); cleanupErr != nil {
+					return needRestart, fmt.Errorf("create failed: %w (cleanup failed: %v)", mErr, cleanupErr)
+				}
+			}
 			return needRestart, mErr
 		}
 		nr, addErr := s.AddInboundClient(inboundSvc, &model.Inbound{
@@ -630,11 +706,27 @@ func (s *ClientService) Create(inboundSvc *InboundService, payload *ClientCreate
 			Settings: string(settingsPayload),
 		})
 		if addErr != nil {
+			if len(createdOn) > 0 {
+				rollbackRec, recErr := s.GetRecordByEmail(nil, client.Email)
+				if recErr == nil {
+					rollbackNeedRestart, rollbackErr := s.rollbackAttach(inboundSvc, rollbackRec, createdOn)
+					if rollbackNeedRestart {
+						needRestart = true
+					}
+					if rollbackErr != nil {
+						return needRestart, fmt.Errorf("create failed: %w (rollback failed: %v)", addErr, rollbackErr)
+					}
+				}
+				if cleanupErr := s.cleanupOrphanClientByEmail(client.Email); cleanupErr != nil {
+					return needRestart, fmt.Errorf("create failed: %w (cleanup failed: %v)", addErr, cleanupErr)
+				}
+			}
 			return needRestart, addErr
 		}
 		if nr {
 			needRestart = true
 		}
+		createdOn = append(createdOn, ibId)
 	}
 	return needRestart, nil
 }

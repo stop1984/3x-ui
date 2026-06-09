@@ -369,3 +369,39 @@ func TestDetachRollsBackWhenLaterInboundFails(t *testing.T) {
 		t.Fatalf("rollback did not restore client on inbound %d", ib1)
 	}
 }
+
+func TestCreateRollsBackWhenLaterInboundFails(t *testing.T) {
+	setupClientMutationDB(t)
+
+	inboundSvc := &InboundService{}
+	clientSvc := &ClientService{}
+
+	ib1 := seedClientMutationInboundClients(t, "vless-create-a", 20443, nil)
+
+	client := model.Client{
+		Email:      "create-rollback@example.com",
+		Enable:     true,
+		LimitIP:    1,
+		TotalGB:    1024,
+		ExpiryTime: 4102444800000,
+		Comment:    "new",
+	}
+
+	needRestart, err := clientSvc.Create(inboundSvc, &ClientCreatePayload{
+		Client:     client,
+		InboundIds: []int{ib1, 999999},
+	})
+	if err == nil {
+		t.Fatalf("Create unexpectedly succeeded")
+	}
+	if !needRestart {
+		t.Fatalf("needRestart = false, want true when runtime is absent")
+	}
+
+	if inboundHasClientEmail(t, ib1, client.Email) {
+		t.Fatalf("rollback left created client attached to inbound %d", ib1)
+	}
+	if _, err := clientSvc.GetRecordByEmail(nil, client.Email); err == nil {
+		t.Fatalf("rollback left orphan client record for %s", client.Email)
+	}
+}
