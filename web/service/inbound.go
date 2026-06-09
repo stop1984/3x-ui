@@ -3685,10 +3685,16 @@ func (s *InboundService) GetClientTrafficByEmail(email string) (traffic *xray.Cl
 	t := traffics[0]
 
 	if rec, rErr := s.clientService.GetRecordByEmail(db, email); rErr == nil && rec != nil {
-		c := rec.ToClient()
-		t.UUID = c.ID
-		t.SubId = c.SubID
-		return t, nil
+		inboundIds, idsErr := s.clientService.GetInboundIdsForRecord(rec.Id)
+		if idsErr != nil {
+			return nil, idsErr
+		}
+		if len(inboundIds) > 0 {
+			c := rec.ToClient()
+			t.UUID = c.ID
+			t.SubId = c.SubID
+			return t, nil
+		}
 	}
 
 	t2, client, err := s.GetClientByEmail(email)

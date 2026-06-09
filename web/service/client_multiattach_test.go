@@ -970,6 +970,55 @@ func TestGetClientInboundByTrafficIDRejectsLegacyOwnerWithoutMembership(t *testi
 	}
 }
 
+func TestGetClientTrafficByEmailRejectsRecordWithoutMembership(t *testing.T) {
+	setupClientMutationDB(t)
+
+	client := model.Client{
+		ID:         "0dd7003a-1984-4f50-89cb-ee48a1af88ae",
+		Email:      "traffic-orphan@example.com",
+		SubID:      "sub-traffic-orphan",
+		Enable:     true,
+		LimitIP:    1,
+		TotalGB:    1024,
+		ExpiryTime: 4102444800000,
+	}
+	ib1 := seedClientMutationInbound(t, "vless-traffic-orphan", 33453, client)
+
+	inboundSvc := &InboundService{}
+	clientSvc := &ClientService{}
+	if err := clientSvc.SyncInbound(database.GetDB(), ib1, []model.Client{client}); err != nil {
+		t.Fatalf("SyncInbound ib1: %v", err)
+	}
+	if err := database.GetDB().Create(&xray.ClientTraffic{
+		InboundId:  ib1,
+		Email:      client.Email,
+		Enable:     true,
+		Total:      client.TotalGB,
+		ExpiryTime: client.ExpiryTime,
+	}).Error; err != nil {
+		t.Fatalf("seed traffic: %v", err)
+	}
+	if err := database.GetDB().Where("client_id > 0").Delete(&model.ClientInbound{}).Error; err != nil {
+		t.Fatalf("delete attachments: %v", err)
+	}
+	var stripped model.Inbound
+	if err := database.GetDB().First(&stripped, ib1).Error; err != nil {
+		t.Fatalf("reload inbound %d: %v", ib1, err)
+	}
+	stripped.Settings = `{"clients":[]}`
+	if err := database.GetDB().Save(&stripped).Error; err != nil {
+		t.Fatalf("strip inbound client membership: %v", err)
+	}
+
+	traffic, err := inboundSvc.GetClientTrafficByEmail(client.Email)
+	if err == nil {
+		t.Fatalf("GetClientTrafficByEmail unexpectedly succeeded without attachment or inbound membership")
+	}
+	if traffic != nil {
+		t.Fatalf("GetClientTrafficByEmail returned traffic despite missing membership")
+	}
+}
+
 func TestBulkAdjustFallsBackToAtomicAdjustForMultiAttachClient(t *testing.T) {
 	setupClientMutationDB(t)
 
