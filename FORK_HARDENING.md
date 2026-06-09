@@ -217,6 +217,37 @@ Effect:
   available,
 - the edit modal no longer has to guess safe ordering for multi-step mutation.
 
+### `TBD` - Make direct attach/detach rollback-safe
+
+Problem:
+
+- even after the new `/clients/save/:email` path, the standalone attach/detach
+  operations still mutated one inbound at a time with no rollback,
+- if one inbound succeeded and a later inbound failed, the panel could keep a
+  half-applied attachment set,
+- this affected both direct `/attach` / `/detach` API calls and any internal
+  code path reusing those helpers.
+
+What changed:
+
+- added compensating rollback inside `ClientService.Attach`:
+  - if a later inbound fails, already-attached inbounds are detached again in
+    reverse order,
+- added compensating rollback inside `ClientService.Detach`:
+  - if a later inbound fails, already-detached inbounds are re-attached from
+    the canonical client snapshot,
+- added regression tests for:
+  - attach success on first inbound + failure on later inbound,
+  - detach success on first inbound + failure on later inbound due to corrupt
+    embedded client state.
+
+Effect:
+
+- direct attach/detach flows now behave transaction-like at the service layer,
+- fewer half-applied attachment sets survive a mid-flight error,
+- the rollback safety now exists below the modal/orchestration layer instead of
+  only above it.
+
 ## Tests and Verification
 
 Every deployed pass was gated by build/test verification.
@@ -240,6 +271,10 @@ And stale embedded sub membership coverage under:
 - `sub/sub_service_membership_test.go`
 
 And edit/attachment rollback coverage under:
+
+- `web/service/client_multiattach_test.go`
+
+And direct attach/detach rollback coverage under:
 
 - `web/service/client_multiattach_test.go`
 
@@ -281,14 +316,14 @@ the commit history above is the important public part.
 
 These areas still deserve audit:
 
-1. client attach/detach flows,
+1. client create/copy flows that still fan out across many inbounds,
 2. remaining round-trip mismatches for exotic transport fields,
 3. any path that still treats the first matching inbound as authoritative for a
    shared client identity.
 
 ## Recommended Next Steps
 
-1. Audit remaining attach/detach edge paths outside the main edit modal.
+1. Audit remaining multi-inbound create/copy flows for the same partial-apply class.
 2. Compare `DB -> config.json -> links/sub` after inbound edits and fix the
    next concrete drift, not broad abstractions.
 3. Keep pushing backend-safe narrow endpoints where the UI currently relies on

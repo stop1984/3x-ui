@@ -922,6 +922,7 @@ func (s *ClientService) Attach(inboundSvc *InboundService, id int, inboundIds []
 	if err != nil {
 		return false, err
 	}
+	inboundIds = normalizeInboundIDs(inboundIds)
 	currentIds, err := s.GetInboundIdsForRecord(id)
 	if err != nil {
 		return false, err
@@ -940,20 +941,48 @@ func (s *ClientService) Attach(inboundSvc *InboundService, id int, inboundIds []
 	clientWire.UpdatedAt = time.Now().UnixMilli()
 
 	needRestart := false
+	attachedNow := make([]int, 0, len(inboundIds))
 	for _, ibId := range inboundIds {
 		if _, attached := have[ibId]; attached {
 			continue
 		}
 		inbound, getErr := inboundSvc.GetInbound(ibId)
 		if getErr != nil {
+			if len(attachedNow) > 0 {
+				rollbackNeedRestart, rollbackErr := s.rollbackAttach(inboundSvc, existing, attachedNow)
+				if rollbackNeedRestart {
+					needRestart = true
+				}
+				if rollbackErr != nil {
+					return needRestart, fmt.Errorf("attach failed: %w (rollback failed: %v)", getErr, rollbackErr)
+				}
+			}
 			return needRestart, getErr
 		}
 		copyClient := *clientWire
 		if err := s.fillProtocolDefaults(&copyClient, inbound); err != nil {
+			if len(attachedNow) > 0 {
+				rollbackNeedRestart, rollbackErr := s.rollbackAttach(inboundSvc, existing, attachedNow)
+				if rollbackNeedRestart {
+					needRestart = true
+				}
+				if rollbackErr != nil {
+					return needRestart, fmt.Errorf("attach failed: %w (rollback failed: %v)", err, rollbackErr)
+				}
+			}
 			return needRestart, err
 		}
 		settingsPayload, mErr := json.Marshal(map[string][]model.Client{"clients": {clientWithInboundFlow(copyClient, inbound)}})
 		if mErr != nil {
+			if len(attachedNow) > 0 {
+				rollbackNeedRestart, rollbackErr := s.rollbackAttach(inboundSvc, existing, attachedNow)
+				if rollbackNeedRestart {
+					needRestart = true
+				}
+				if rollbackErr != nil {
+					return needRestart, fmt.Errorf("attach failed: %w (rollback failed: %v)", mErr, rollbackErr)
+				}
+			}
 			return needRestart, mErr
 		}
 		nr, addErr := s.AddInboundClient(inboundSvc, &model.Inbound{
@@ -961,11 +990,21 @@ func (s *ClientService) Attach(inboundSvc *InboundService, id int, inboundIds []
 			Settings: string(settingsPayload),
 		})
 		if addErr != nil {
+			if len(attachedNow) > 0 {
+				rollbackNeedRestart, rollbackErr := s.rollbackAttach(inboundSvc, existing, attachedNow)
+				if rollbackNeedRestart {
+					needRestart = true
+				}
+				if rollbackErr != nil {
+					return needRestart, fmt.Errorf("attach failed: %w (rollback failed: %v)", addErr, rollbackErr)
+				}
+			}
 			return needRestart, addErr
 		}
 		if nr {
 			needRestart = true
 		}
+		attachedNow = append(attachedNow, ibId)
 	}
 	return needRestart, nil
 }
@@ -1445,6 +1484,60 @@ func (s *ClientService) syncAttachments(inboundSvc *InboundService, id int, targ
 	}
 	if len(toDetach) > 0 {
 		nr, err := s.Detach(inboundSvc, id, toDetach)
+		if err != nil {
+			return needRestart, err
+		}
+		if nr {
+			needRestart = true
+		}
+	}
+	return needRestart, nil
+}
+
+func (s *ClientService) rollbackAttach(inboundSvc *InboundService, existing *model.ClientRecord, inboundIDs []int) (bool, error) {
+	needRestart := false
+	for i := len(inboundIDs) - 1; i >= 0; i-- {
+		ibID := inboundIDs[i]
+		inbound, err := inboundSvc.GetInbound(ibID)
+		if err != nil {
+			return needRestart, err
+		}
+		key := clientKeyForProtocol(inbound.Protocol, existing)
+		if key == "" {
+			continue
+		}
+		nr, err := s.DelInboundClient(inboundSvc, ibID, key)
+		if err != nil {
+			return needRestart, err
+		}
+		if nr {
+			needRestart = true
+		}
+	}
+	return needRestart, nil
+}
+
+func (s *ClientService) rollbackDetach(inboundSvc *InboundService, existing *model.ClientRecord, inboundIDs []int) (bool, error) {
+	needRestart := false
+	clientWire := existing.ToClient()
+	clientWire.UpdatedAt = time.Now().UnixMilli()
+	for _, ibID := range inboundIDs {
+		inbound, err := inboundSvc.GetInbound(ibID)
+		if err != nil {
+			return needRestart, err
+		}
+		copyClient := *clientWire
+		if err := s.fillProtocolDefaults(&copyClient, inbound); err != nil {
+			return needRestart, err
+		}
+		settingsPayload, err := json.Marshal(map[string][]model.Client{"clients": {copyClient}})
+		if err != nil {
+			return needRestart, err
+		}
+		nr, err := s.AddInboundClient(inboundSvc, &model.Inbound{
+			Id:       ibID,
+			Settings: string(settingsPayload),
+		})
 		if err != nil {
 			return needRestart, err
 		}
@@ -3654,6 +3747,7 @@ func (s *ClientService) Detach(inboundSvc *InboundService, id int, inboundIds []
 	if err != nil {
 		return false, err
 	}
+	inboundIds = normalizeInboundIDs(inboundIds)
 	currentIds, err := s.GetInboundIdsForRecord(id)
 	if err != nil {
 		return false, err
@@ -3664,12 +3758,22 @@ func (s *ClientService) Detach(inboundSvc *InboundService, id int, inboundIds []
 	}
 
 	needRestart := false
+	detachedNow := make([]int, 0, len(inboundIds))
 	for _, ibId := range inboundIds {
 		if _, attached := have[ibId]; !attached {
 			continue
 		}
 		inbound, getErr := inboundSvc.GetInbound(ibId)
 		if getErr != nil {
+			if len(detachedNow) > 0 {
+				rollbackNeedRestart, rollbackErr := s.rollbackDetach(inboundSvc, existing, detachedNow)
+				if rollbackNeedRestart {
+					needRestart = true
+				}
+				if rollbackErr != nil {
+					return needRestart, fmt.Errorf("detach failed: %w (rollback failed: %v)", getErr, rollbackErr)
+				}
+			}
 			return needRestart, getErr
 		}
 		key := clientKeyForProtocol(inbound.Protocol, existing)
@@ -3678,11 +3782,21 @@ func (s *ClientService) Detach(inboundSvc *InboundService, id int, inboundIds []
 		}
 		nr, delErr := s.DelInboundClient(inboundSvc, ibId, key, true)
 		if delErr != nil {
+			if len(detachedNow) > 0 {
+				rollbackNeedRestart, rollbackErr := s.rollbackDetach(inboundSvc, existing, detachedNow)
+				if rollbackNeedRestart {
+					needRestart = true
+				}
+				if rollbackErr != nil {
+					return needRestart, fmt.Errorf("detach failed: %w (rollback failed: %v)", delErr, rollbackErr)
+				}
+			}
 			return needRestart, delErr
 		}
 		if nr {
 			needRestart = true
 		}
+		detachedNow = append(detachedNow, ibId)
 	}
 	return needRestart, nil
 }

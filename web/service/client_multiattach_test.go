@@ -263,3 +263,109 @@ func TestSaveByEmailRollsBackWhenAttachmentSyncFails(t *testing.T) {
 		t.Fatalf("rollback left client attached to inbound %d", ib2)
 	}
 }
+
+func TestAttachRollsBackWhenLaterInboundFails(t *testing.T) {
+	setupClientMutationDB(t)
+
+	client := model.Client{
+		ID:         "74ba2a42-5f2a-4642-8fc9-3b16d994d92f",
+		Email:      "attach-rollback@example.com",
+		SubID:      "sub-attach-rollback",
+		Enable:     true,
+		LimitIP:    1,
+		TotalGB:    1024,
+		ExpiryTime: 4102444800000,
+		Comment:    "stable",
+	}
+	ib1 := seedClientMutationInbound(t, "vless-attach-a", 16443, client)
+	ib2 := seedClientMutationInboundClients(t, "vless-attach-b", 17443, nil)
+
+	inboundSvc := &InboundService{}
+	clientSvc := &ClientService{}
+	if err := clientSvc.SyncInbound(database.GetDB(), ib1, []model.Client{client}); err != nil {
+		t.Fatalf("SyncInbound ib1: %v", err)
+	}
+
+	rec, err := clientSvc.GetRecordByEmail(nil, client.Email)
+	if err != nil {
+		t.Fatalf("GetRecordByEmail: %v", err)
+	}
+
+	needRestart, err := clientSvc.Attach(inboundSvc, rec.Id, []int{ib2, 999999})
+	if err == nil {
+		t.Fatalf("Attach unexpectedly succeeded")
+	}
+	if !needRestart {
+		t.Fatalf("needRestart = false, want true when runtime is absent")
+	}
+
+	attached, err := clientSvc.GetInboundIdsForRecord(rec.Id)
+	if err != nil {
+		t.Fatalf("GetInboundIdsForRecord: %v", err)
+	}
+	if len(attached) != 1 || attached[0] != ib1 {
+		t.Fatalf("attached inbounds after rollback = %v, want [%d]", attached, ib1)
+	}
+	if inboundHasClientEmail(t, ib2, client.Email) {
+		t.Fatalf("rollback left client attached to inbound %d", ib2)
+	}
+}
+
+func TestDetachRollsBackWhenLaterInboundFails(t *testing.T) {
+	setupClientMutationDB(t)
+
+	client := model.Client{
+		ID:         "a0e3d067-f242-45d0-b1f0-a3d55d1fb2f4",
+		Email:      "detach-rollback@example.com",
+		SubID:      "sub-detach-rollback",
+		Enable:     true,
+		LimitIP:    1,
+		TotalGB:    1024,
+		ExpiryTime: 4102444800000,
+		Comment:    "stable",
+	}
+	ib1 := seedClientMutationInbound(t, "vless-detach-a", 18443, client)
+	ib2 := seedClientMutationInbound(t, "vless-detach-b", 19443, client)
+
+	inboundSvc := &InboundService{}
+	clientSvc := &ClientService{}
+	if err := clientSvc.SyncInbound(database.GetDB(), ib1, []model.Client{client}); err != nil {
+		t.Fatalf("SyncInbound ib1: %v", err)
+	}
+	if err := clientSvc.SyncInbound(database.GetDB(), ib2, []model.Client{client}); err != nil {
+		t.Fatalf("SyncInbound ib2: %v", err)
+	}
+
+	var corrupt model.Inbound
+	if err := database.GetDB().First(&corrupt, ib2).Error; err != nil {
+		t.Fatalf("load inbound %d: %v", ib2, err)
+	}
+	corrupt.Settings = `{"clients":[]}`
+	if err := database.GetDB().Save(&corrupt).Error; err != nil {
+		t.Fatalf("corrupt inbound %d: %v", ib2, err)
+	}
+
+	rec, err := clientSvc.GetRecordByEmail(nil, client.Email)
+	if err != nil {
+		t.Fatalf("GetRecordByEmail: %v", err)
+	}
+
+	needRestart, err := clientSvc.Detach(inboundSvc, rec.Id, []int{ib1, ib2})
+	if err == nil {
+		t.Fatalf("Detach unexpectedly succeeded")
+	}
+	if !needRestart {
+		t.Fatalf("needRestart = false, want true when runtime is absent")
+	}
+
+	attached, err := clientSvc.GetInboundIdsForRecord(rec.Id)
+	if err != nil {
+		t.Fatalf("GetInboundIdsForRecord: %v", err)
+	}
+	if len(attached) != 2 {
+		t.Fatalf("attached inbounds after rollback = %v, want both original inbounds", attached)
+	}
+	if !inboundHasClientEmail(t, ib1, client.Email) {
+		t.Fatalf("rollback did not restore client on inbound %d", ib1)
+	}
+}
