@@ -1381,6 +1381,136 @@ func (s *ClientService) DetachByEmailMany(inboundSvc *InboundService, email stri
 	return s.Detach(inboundSvc, rec.Id, inboundIds)
 }
 
+func normalizeInboundIDs(inboundIds []int) []int {
+	if len(inboundIds) == 0 {
+		return nil
+	}
+	seen := make(map[int]struct{}, len(inboundIds))
+	out := make([]int, 0, len(inboundIds))
+	for _, id := range inboundIds {
+		if id <= 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
+}
+
+func diffInboundIDs(currentIds []int, targetIds []int) (toAttach []int, toDetach []int) {
+	current := make(map[int]struct{}, len(currentIds))
+	target := make(map[int]struct{}, len(targetIds))
+	for _, id := range currentIds {
+		if id > 0 {
+			current[id] = struct{}{}
+		}
+	}
+	for _, id := range targetIds {
+		if id > 0 {
+			target[id] = struct{}{}
+			if _, ok := current[id]; !ok {
+				toAttach = append(toAttach, id)
+			}
+		}
+	}
+	for _, id := range currentIds {
+		if id > 0 {
+			if _, ok := target[id]; !ok {
+				toDetach = append(toDetach, id)
+			}
+		}
+	}
+	return toAttach, toDetach
+}
+
+func (s *ClientService) syncAttachments(inboundSvc *InboundService, id int, targetInboundIDs []int) (bool, error) {
+	targetInboundIDs = normalizeInboundIDs(targetInboundIDs)
+	currentInboundIDs, err := s.GetInboundIdsForRecord(id)
+	if err != nil {
+		return false, err
+	}
+	toAttach, toDetach := diffInboundIDs(currentInboundIDs, targetInboundIDs)
+	needRestart := false
+	if len(toAttach) > 0 {
+		nr, err := s.Attach(inboundSvc, id, toAttach)
+		if err != nil {
+			return needRestart, err
+		}
+		if nr {
+			needRestart = true
+		}
+	}
+	if len(toDetach) > 0 {
+		nr, err := s.Detach(inboundSvc, id, toDetach)
+		if err != nil {
+			return needRestart, err
+		}
+		if nr {
+			needRestart = true
+		}
+	}
+	return needRestart, nil
+}
+
+// SaveByEmail applies a full client edit and the desired attachment set as one
+// backend operation. If attachment synchronization fails after the client body
+// was already updated, it attempts a compensating rollback to the previous
+// client snapshot and previous inbound attachment set.
+func (s *ClientService) SaveByEmail(inboundSvc *InboundService, email string, payload *ClientCreatePayload) (bool, error) {
+	if strings.TrimSpace(email) == "" {
+		return false, common.NewError("client email is required")
+	}
+	if payload == nil {
+		return false, common.NewError("empty payload")
+	}
+	targetInboundIDs := normalizeInboundIDs(payload.InboundIds)
+	if len(targetInboundIDs) == 0 {
+		return false, common.NewError("at least one inbound is required")
+	}
+	rec, err := s.GetRecordByEmail(nil, email)
+	if err != nil {
+		return false, err
+	}
+	oldClient := rec.ToClient()
+	oldInboundIDs, err := s.GetInboundIdsForRecord(rec.Id)
+	if err != nil {
+		return false, err
+	}
+
+	needRestart, err := s.Update(inboundSvc, rec.Id, payload.Client)
+	if err != nil {
+		return needRestart, err
+	}
+
+	attachNeedRestart, syncErr := s.syncAttachments(inboundSvc, rec.Id, targetInboundIDs)
+	if attachNeedRestart {
+		needRestart = true
+	}
+	if syncErr == nil {
+		return needRestart, nil
+	}
+
+	rollbackErrs := make([]string, 0, 2)
+	if rollbackNeedRestart, rollbackErr := s.syncAttachments(inboundSvc, rec.Id, oldInboundIDs); rollbackErr != nil {
+		rollbackErrs = append(rollbackErrs, "attachments: "+rollbackErr.Error())
+	} else if rollbackNeedRestart {
+		needRestart = true
+	}
+	if rollbackNeedRestart, rollbackErr := s.Update(inboundSvc, rec.Id, *oldClient); rollbackErr != nil {
+		rollbackErrs = append(rollbackErrs, "client: "+rollbackErr.Error())
+	} else if rollbackNeedRestart {
+		needRestart = true
+	}
+
+	if len(rollbackErrs) > 0 {
+		return needRestart, fmt.Errorf("save client failed: %w (rollback failed: %s)", syncErr, strings.Join(rollbackErrs, "; "))
+	}
+	return needRestart, syncErr
+}
+
 func (s *ClientService) DeleteByEmail(inboundSvc *InboundService, email string, keepTraffic bool) (bool, error) {
 	if email == "" {
 		return false, common.NewError("client email is required")

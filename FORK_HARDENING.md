@@ -181,6 +181,42 @@ Effect:
   inbound JSON blob lagged behind,
 - copy/import flows keep shared `subId` state aligned across attached inbounds.
 
+### `TBD` - Make client edit + attachment sync a single backend operation
+
+Problem:
+
+- the clients page edit modal previously did three separate calls:
+  1. `/clients/update/:email`
+  2. `/clients/:email/attach`
+  3. `/clients/:email/detach`
+- if attach or detach failed after the client body had already been updated,
+  the panel was left in a partially-applied state,
+- rollback was effectively manual and depended on the user noticing the drift.
+
+What changed:
+
+- added a dedicated backend endpoint:
+  - `POST /panel/api/clients/save/:email`
+- introduced a backend save path that:
+  - updates the client body,
+  - syncs the exact attached inbound set,
+  - attempts compensating rollback to the previous client snapshot and previous
+    attachment set if attachment sync fails mid-flight,
+- switched the clients page edit modal to use that single save path instead of
+  frontend-orchestrated `update + attach + detach`,
+- added a regression test that forces attachment sync failure after a successful
+  client update and verifies rollback restores:
+  - client record fields,
+  - attached inbound IDs,
+  - per-inbound embedded client state.
+
+Effect:
+
+- client edits are now much less likely to leave half-applied attachment state,
+- rollback responsibility moved into the backend where the old snapshot is
+  available,
+- the edit modal no longer has to guess safe ordering for multi-step mutation.
+
 ## Tests and Verification
 
 Every deployed pass was gated by build/test verification.
@@ -202,6 +238,10 @@ for example multi-attach client mutation tests under:
 And stale embedded sub membership coverage under:
 
 - `sub/sub_service_membership_test.go`
+
+And edit/attachment rollback coverage under:
+
+- `web/service/client_multiattach_test.go`
 
 Live deployment verification:
 
@@ -248,7 +288,7 @@ These areas still deserve audit:
 
 ## Recommended Next Steps
 
-1. Audit attach/detach flows for the same partial-update class.
+1. Audit remaining attach/detach edge paths outside the main edit modal.
 2. Compare `DB -> config.json -> links/sub` after inbound edits and fix the
    next concrete drift, not broad abstractions.
 3. Keep pushing backend-safe narrow endpoints where the UI currently relies on

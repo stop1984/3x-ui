@@ -304,6 +304,14 @@ export function useClients() {
     onSuccess: (msg) => { if (msg?.success) invalidateAll(); },
   });
 
+  const save = useCallback(async (email: string, payload: { client: unknown; inboundIds: number[] }) => {
+    if (!email) return null;
+    const encoded = encodeURIComponent(email);
+    const msg = await HttpUtil.post(`/panel/api/clients/save/${encoded}`, payload, JSON_HEADERS) as ApiMsg;
+    if (msg?.success) await refresh();
+    return msg;
+  }, [refresh]);
+
   const updateMut = useMutation({
     mutationFn: ({ email, client }: { email: string; client: unknown }) =>
       HttpUtil.post(`/panel/api/clients/update/${encodeURIComponent(email)}`, client, JSON_HEADERS),
@@ -551,6 +559,7 @@ export function useClients() {
     create,
     bulkCreate,
     update,
+    save,
     remove,
     bulkDelete,
     bulkAdjust,

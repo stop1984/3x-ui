@@ -42,8 +42,6 @@ type Mode = 'add' | 'edit';
 interface SaveMetaEdit {
   isEdit: true;
   email: string;
-  attach: number[];
-  detach: number[];
 }
 
 interface SaveMetaCreate {
@@ -381,15 +379,12 @@ export default function ClientFormModal({
     try {
       let msg;
       if (isEdit && client) {
-        const original = new Set(attachedIds || []);
-        const next = new Set(form.inboundIds || []);
-        const toAttach = [...next].filter((id) => !original.has(id));
-        const toDetach = [...original].filter((id) => !next.has(id));
-        msg = await save(clientPayload, {
+        msg = await save({
+          client: clientPayload,
+          inboundIds: form.inboundIds,
+        }, {
           isEdit: true,
           email: client.email,
-          attach: toAttach,
-          detach: toDetach,
         });
       } else {
         msg = await save(

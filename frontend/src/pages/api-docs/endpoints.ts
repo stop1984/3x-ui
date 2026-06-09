@@ -522,6 +522,18 @@ export const sections: readonly Section[] = [
       },
       {
         method: 'POST',
+        path: '/panel/api/clients/save/:email',
+        summary: 'Atomically apply a full client edit together with the desired attached inbound set. The backend updates the client, syncs attachments, and attempts a compensating rollback if attachment sync fails after the client body was already changed.',
+        params: [
+          { name: 'email', in: 'path', type: 'string', desc: 'Current client email (unique identifier).' },
+          { name: 'client', in: 'body (json)', type: 'object', desc: 'Full client payload to keep after save.' },
+          { name: 'inboundIds', in: 'body (json)', type: 'integer[]', desc: 'Exact inbound attachment set after save. At least one required.' },
+        ],
+        body: '{\n  "client": {\n    "email": "alice@example.com",\n    "totalGB": 107374182400,\n    "expiryTime": 1767225600000,\n    "tgId": 123456789,\n    "enable": true\n  },\n  "inboundIds": [3, 5]\n}',
+        response: '{\n  "success": true,\n  "msg": "Client updated"\n}',
+      },
+      {
+        method: 'POST',
         path: '/panel/api/clients/setEnable/:email',
         summary: 'Flip only the enable flag for one client. Unlike /update, this endpoint never requires the full client payload and applies the change across every attached inbound.',
         params: [

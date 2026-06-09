@@ -195,7 +195,7 @@ export default function ClientsPage() {
     setQuery,
     inbounds, onlines, loading, fetched, fetchError, subSettings,
     ipLimitEnable, tgBotEnable, expireDiff, trafficDiff, pageSize,
-    create, update, remove, bulkDelete, bulkAdjust, bulkAddToGroup, bulkRemoveFromGroup, attach, bulkAttach, detach, bulkDetach,
+    create, save, update, remove, bulkDelete, bulkAdjust, bulkAddToGroup, bulkRemoveFromGroup, attach, bulkAttach, detach, bulkDetach,
     resetTraffic, resetAllTraffics, delDepleted, setEnable,
     applyTrafficEvent, applyClientStatsEvent, applyInvalidate,
     refresh,
@@ -552,23 +552,13 @@ export default function ClientsPage() {
 
   const onSave = useCallback(async (
     payload: Record<string, unknown> | { client: Record<string, unknown>; inboundIds: number[] },
-    meta: { isEdit: false } | { isEdit: true; email: string; attach: number[]; detach: number[] },
+    meta: { isEdit: false } | { isEdit: true; email: string },
   ) => {
     if (!meta.isEdit) {
       return create(payload);
     }
-    const updateMsg = await update(meta.email, payload);
-    if (!updateMsg?.success) return updateMsg;
-    if (Array.isArray(meta.attach) && meta.attach.length > 0) {
-      const r = await attach(meta.email, meta.attach);
-      if (!r?.success) return r;
-    }
-    if (Array.isArray(meta.detach) && meta.detach.length > 0) {
-      const r = await detach(meta.email, meta.detach);
-      if (!r?.success) return r;
-    }
-    return updateMsg;
-  }, [create, update, attach, detach]);
+    return save(meta.email, payload as { client: Record<string, unknown>; inboundIds: number[] });
+  }, [create, save]);
 
   const pageClass = useMemo(() => {
     const classes = ['clients-page'];
