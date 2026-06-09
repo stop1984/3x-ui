@@ -1919,25 +1919,27 @@ func (s *InboundService) setRemoteTrafficLocked(nodeID int, snap *runtime.Traffi
 		if _, kept := snapTags[c.Tag]; kept {
 			continue
 		}
-		var goneEmails []string
-		if err := tx.Model(xray.ClientTraffic{}).
-			Where("inbound_id = ?", c.Id).
-			Pluck("email", &goneEmails).Error; err != nil {
+		// Detach/delete the missing node inbound, but do not destroy shared
+		// client identities or client_traffics rows. Those are email-keyed and may
+		// still be needed by sibling inbounds or preserved as intentionally detached
+		// clients for later re-attach.
+		var attachedEmails []string
+		if err := tx.Table("clients").
+			Select("clients.email").
+			Joins("JOIN client_inbounds ON client_inbounds.client_id = clients.id").
+			Where("client_inbounds.inbound_id = ?", c.Id).
+			Pluck("clients.email", &attachedEmails).Error; err != nil {
 			return false, err
 		}
-		if len(goneEmails) > 0 {
-			// Chunk to avoid SQLite bind var limit when a node has many clients
-			// removed (e.g. after API bulk delete or structural change on node inbound).
-			for _, batch := range chunkStrings(goneEmails, sqliteMaxVars) {
+		if len(attachedEmails) > 0 {
+			// Node-local traffic attribution should go away with the node inbound
+			// itself; only the shared central rows remain.
+			for _, batch := range chunkStrings(attachedEmails, sqliteMaxVars) {
 				if err := tx.Where("node_id = ? AND email IN ?", nodeID, batch).
 					Delete(&model.NodeClientTraffic{}).Error; err != nil {
 					return false, err
 				}
 			}
-		}
-		if err := tx.Where("inbound_id = ?", c.Id).
-			Delete(&xray.ClientTraffic{}).Error; err != nil {
-			return false, err
 		}
 		if err := s.clientService.DetachInbound(tx, c.Id); err != nil {
 			return false, err
