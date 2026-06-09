@@ -1156,10 +1156,11 @@ type BulkAttachResult struct {
 	Errors   []string `json:"errors"`
 }
 
-// BulkAttach attaches the given existing clients (by email) to each target inbound,
-// reusing their identity (email/UUID/password/subId) and a shared traffic row. It adds
-// all clients to a target in a single AddInboundClient call, and reports clients already
-// present on a target as skipped.
+// BulkAttach attaches the given existing clients (by email) to each target
+// inbound, reusing their identity (email/UUID/password/subId) and a shared
+// traffic row. Single-target cases stay batched per inbound; clients that need
+// to fan out to multiple new target inbounds are routed through the
+// rollback-safe single-client attach path.
 func (s *ClientService) BulkAttach(inboundSvc *InboundService, emails []string, inboundIds []int) (*BulkAttachResult, bool, error) {
 	result := &BulkAttachResult{}
 	inboundIds = normalizeInboundIDs(inboundIds)
@@ -1198,29 +1199,59 @@ func (s *ClientService) BulkAttach(inboundSvc *InboundService, emails []string, 
 		logger.Warningf("[BulkAttach] getAllEmailSubIDs: %v", sidErr)
 	}
 
+	recsByInbound := make(map[int][]*model.ClientRecord)
 	needRestart := false
+	for _, rec := range records {
+		currentIds, err := s.GetInboundIdsForRecord(rec.Id)
+		if err != nil {
+			recordErr("%s: %v", rec.Email, err)
+			continue
+		}
+		have := make(map[int]struct{}, len(currentIds))
+		for _, id := range currentIds {
+			have[id] = struct{}{}
+		}
+		pendingTargets := make([]int, 0, len(inboundIds))
+		for _, targetID := range inboundIds {
+			if _, attached := have[targetID]; attached {
+				result.Skipped = append(result.Skipped, rec.Email)
+				continue
+			}
+			pendingTargets = append(pendingTargets, targetID)
+		}
+		if len(pendingTargets) == 0 {
+			continue
+		}
+		if len(pendingTargets) > 1 {
+			nr, err := s.AttachByEmail(inboundSvc, rec.Email, pendingTargets)
+			if err != nil {
+				recordErr("%s: %v", rec.Email, err)
+				continue
+			}
+			if nr {
+				needRestart = true
+			}
+			for range pendingTargets {
+				result.Attached = append(result.Attached, rec.Email)
+			}
+			continue
+		}
+		recsByInbound[pendingTargets[0]] = append(recsByInbound[pendingTargets[0]], rec)
+	}
+
 	for _, ibId := range inboundIds {
+		recs := recsByInbound[ibId]
+		if len(recs) == 0 {
+			continue
+		}
 		inbound, err := inboundSvc.GetInbound(ibId)
 		if err != nil {
 			recordErr("inbound %d: %v", ibId, err)
 			continue
 		}
-		existingClients, err := inboundSvc.GetClients(inbound)
-		if err != nil {
-			recordErr("inbound %d: %v", ibId, err)
-			continue
-		}
-		have := make(map[string]struct{}, len(existingClients))
-		for _, c := range existingClients {
-			have[strings.ToLower(c.Email)] = struct{}{}
-		}
 
-		clientsToAdd := make([]model.Client, 0, len(records))
-		for _, rec := range records {
-			if _, attached := have[strings.ToLower(rec.Email)]; attached {
-				result.Skipped = append(result.Skipped, rec.Email)
-				continue
-			}
+		clientsToAdd := make([]model.Client, 0, len(recs))
+		for _, rec := range recs {
 			client := *rec.ToClient()
 			client.UpdatedAt = time.Now().UnixMilli()
 			if err := s.fillProtocolDefaults(&client, inbound); err != nil {
@@ -1262,11 +1293,11 @@ type BulkDetachResult struct {
 	Errors   []string `json:"errors"`
 }
 
-// BulkDetach detaches the given existing clients (by email) from each target inbound.
-// (email, inbound) pairs where the client is not currently attached are silently skipped
-// at the inbound level; emails that aren't attached to any of the requested inbounds
-// are reported under skipped. ClientRecord rows are kept even when they become orphaned
-// (matches single-client detach semantics); callers should use bulkDelete for full removal.
+// BulkDetach detaches the given existing clients (by email) from each target
+// inbound. Single-target cases stay batched per inbound; clients that need to
+// be detached from multiple requested inbounds are routed through the
+// rollback-safe single-client detach path. ClientRecord rows are kept even
+// when they become orphaned; callers should use bulkDelete for full removal.
 func (s *ClientService) BulkDetach(inboundSvc *InboundService, emails []string, inboundIds []int) (*BulkDetachResult, bool, error) {
 	result := &BulkDetachResult{}
 	inboundIds = normalizeInboundIDs(inboundIds)
@@ -1286,9 +1317,7 @@ func (s *ClientService) BulkDetach(inboundSvc *InboundService, emails []string, 
 	}
 
 	recsByInbound := make(map[int][]*model.ClientRecord)
-	emailOrder := make([]string, 0, len(emails))
-	emailRepr := make(map[string]string, len(emails))
-	emailFailed := make(map[string]bool, len(emails))
+	needRestart := false
 	seenEmail := make(map[string]struct{}, len(emails))
 	for _, email := range emails {
 		if email == "" {
@@ -1310,22 +1339,32 @@ func (s *ClientService) BulkDetach(inboundSvc *InboundService, emails []string, 
 			recordErr("%s: %v", email, err)
 			continue
 		}
-		matched := false
+		matchedIDs := make([]int, 0, len(currentIds))
 		for _, id := range currentIds {
 			if _, ok := requested[id]; ok {
-				recsByInbound[id] = append(recsByInbound[id], rec)
-				matched = true
+				matchedIDs = append(matchedIDs, id)
 			}
 		}
-		if !matched {
+		if len(matchedIDs) == 0 {
 			result.Skipped = append(result.Skipped, rec.Email)
 			continue
 		}
-		emailOrder = append(emailOrder, key)
-		emailRepr[key] = rec.Email
+		if len(matchedIDs) > 1 {
+			nr, err := s.DetachByEmailMany(inboundSvc, rec.Email, matchedIDs)
+			if err != nil {
+				recordErr("%s: %v", rec.Email, err)
+				continue
+			}
+			if nr {
+				needRestart = true
+			}
+			result.Detached = append(result.Detached, rec.Email)
+			continue
+		}
+		recsByInbound[matchedIDs[0]] = append(recsByInbound[matchedIDs[0]], rec)
 	}
 
-	needRestart := false
+	detachedSet := make(map[string]struct{}, len(emails))
 	for _, ibId := range inboundIds {
 		recs, ok := recsByInbound[ibId]
 		if !ok {
@@ -1335,21 +1374,19 @@ func (s *ClientService) BulkDetach(inboundSvc *InboundService, emails []string, 
 		nr, err := s.delInboundClients(inboundSvc, ibId, recs, true)
 		if err != nil {
 			recordErr("inbound %d: %v", ibId, err)
-			for _, rec := range recs {
-				emailFailed[strings.ToLower(rec.Email)] = true
-			}
 			continue
 		}
 		if nr {
 			needRestart = true
 		}
-	}
-
-	for _, key := range emailOrder {
-		if emailFailed[key] {
-			continue
+		for _, rec := range recs {
+			key := strings.ToLower(rec.Email)
+			if _, seen := detachedSet[key]; seen {
+				continue
+			}
+			detachedSet[key] = struct{}{}
+			result.Detached = append(result.Detached, rec.Email)
 		}
-		result.Detached = append(result.Detached, emailRepr[key])
 	}
 
 	return result, needRestart, nil

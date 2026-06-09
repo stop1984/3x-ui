@@ -4,14 +4,20 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"sort"
+	"sync"
 	"testing"
 
 	"github.com/mhsanaei/3x-ui/v3/database"
 	"github.com/mhsanaei/3x-ui/v3/database/model"
+	xuilogger "github.com/mhsanaei/3x-ui/v3/logger"
+	"github.com/op/go-logging"
 )
+
+var bulkLoggerOnce sync.Once
 
 func setupBulkDB(t *testing.T) {
 	t.Helper()
+	bulkLoggerOnce.Do(func() { xuilogger.InitLogger(logging.ERROR) })
 	dbDir := t.TempDir()
 	t.Setenv("XUI_DB_FOLDER", dbDir)
 	if err := database.InitDB(filepath.Join(dbDir, "x-ui.db")); err != nil {
@@ -240,5 +246,107 @@ func TestBulkAttachDetach_Trojan(t *testing.T) {
 	}
 	if list, _ := svc.ListForInbound(nil, ib2.Id); len(list) != 0 {
 		t.Fatalf("trojan clients should be gone from ib2, got %v", sortedEmails(list))
+	}
+}
+
+func TestBulkAttach_RollsBackSharedClientAcrossMultipleTargets(t *testing.T) {
+	setupBulkDB(t)
+	svc := &ClientService{}
+	inboundSvc := &InboundService{}
+
+	source := []model.Client{
+		{Email: "shared-attach@x", ID: "77777777-7777-7777-7777-777777777777", SubID: "ssa", Enable: true},
+	}
+	ib1 := mkInbound(t, 23001, model.VLESS, clientsSettings(t, source))
+	ib2 := mkInbound(t, 23002, model.VLESS, `{"clients":[]}`)
+	ib3 := mkInbound(t, 23003, model.VLESS, `{"clients":[]}`)
+	if err := svc.SyncInbound(nil, ib1.Id, source); err != nil {
+		t.Fatalf("seed source linkage: %v", err)
+	}
+
+	ib3.Settings = "{"
+	if err := database.GetDB().Save(ib3).Error; err != nil {
+		t.Fatalf("corrupt target inbound: %v", err)
+	}
+
+	res, _, err := svc.BulkAttach(inboundSvc, []string{"shared-attach@x"}, []int{ib2.Id, ib3.Id})
+	if err != nil {
+		t.Fatalf("BulkAttach: %v", err)
+	}
+	if len(res.Attached) != 0 {
+		t.Fatalf("attach should roll back on multi-target failure, got Attached=%v", res.Attached)
+	}
+	if len(res.Errors) == 0 {
+		t.Fatalf("expected bulk attach error for failed multi-target rollback-safe path")
+	}
+	if list, _ := svc.ListForInbound(nil, ib2.Id); len(list) != 0 {
+		t.Fatalf("rollback left client attached to healthy target inbound %d: %v", ib2.Id, sortedEmails(list))
+	}
+	rec, err := svc.GetRecordByEmail(nil, "shared-attach@x")
+	if err != nil {
+		t.Fatalf("GetRecordByEmail: %v", err)
+	}
+	ids, err := svc.GetInboundIdsForRecord(rec.Id)
+	if err != nil {
+		t.Fatalf("GetInboundIdsForRecord: %v", err)
+	}
+	if len(ids) != 1 || ids[0] != ib1.Id {
+		t.Fatalf("record should remain attached only to source inbound %d, got %v", ib1.Id, ids)
+	}
+}
+
+func TestBulkDetach_RollsBackSharedClientAcrossMultipleTargets(t *testing.T) {
+	setupBulkDB(t)
+	svc := &ClientService{}
+	inboundSvc := &InboundService{}
+
+	source := []model.Client{
+		{Email: "shared-detach@x", ID: "88888888-8888-8888-8888-888888888888", SubID: "ssd", Enable: true},
+	}
+	ib1 := mkInbound(t, 24001, model.VLESS, clientsSettings(t, source))
+	ib2 := mkInbound(t, 24002, model.VLESS, clientsSettings(t, source))
+	ib3 := mkInbound(t, 24003, model.VLESS, clientsSettings(t, source))
+	if err := svc.SyncInbound(nil, ib1.Id, source); err != nil {
+		t.Fatalf("seed source linkage: %v", err)
+	}
+	if err := svc.SyncInbound(nil, ib2.Id, source); err != nil {
+		t.Fatalf("seed target linkage 2: %v", err)
+	}
+	if err := svc.SyncInbound(nil, ib3.Id, source); err != nil {
+		t.Fatalf("seed target linkage 3: %v", err)
+	}
+
+	ib3.Settings = `{"clients":[]}`
+	if err := database.GetDB().Save(ib3).Error; err != nil {
+		t.Fatalf("corrupt target inbound: %v", err)
+	}
+
+	res, _, err := svc.BulkDetach(inboundSvc, []string{"shared-detach@x"}, []int{ib2.Id, ib3.Id})
+	if err != nil {
+		t.Fatalf("BulkDetach: %v", err)
+	}
+	if len(res.Detached) != 0 {
+		t.Fatalf("detach should roll back on multi-target failure, got Detached=%v", res.Detached)
+	}
+	if len(res.Errors) == 0 {
+		t.Fatalf("expected bulk detach error for failed multi-target rollback-safe path")
+	}
+	list2, err := svc.ListForInbound(nil, ib2.Id)
+	if err != nil {
+		t.Fatalf("ListForInbound(%d): %v", ib2.Id, err)
+	}
+	if len(list2) != 1 || list2[0].Email != "shared-detach@x" {
+		t.Fatalf("rollback left inbound %d without client: %v", ib2.Id, sortedEmails(list2))
+	}
+	rec, err := svc.GetRecordByEmail(nil, "shared-detach@x")
+	if err != nil {
+		t.Fatalf("GetRecordByEmail: %v", err)
+	}
+	ids, err := svc.GetInboundIdsForRecord(rec.Id)
+	if err != nil {
+		t.Fatalf("GetInboundIdsForRecord: %v", err)
+	}
+	if len(ids) != 3 {
+		t.Fatalf("record should remain attached to all original inbounds, got %v", ids)
 	}
 }
