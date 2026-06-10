@@ -401,7 +401,12 @@ the commit history above is the important public part.
 - multi-attach traffic reset now prevalidates every attached inbound before the
   first reset, so a corrupt later attachment cannot partially reset traffic,
 - shared-client email lookup now resolves through canonical attachments instead
-  of trusting the stale owner stored in `ClientTraffic.InboundId`.
+  of trusting the stale owner stored in `ClientTraffic.InboundId`,
+- mKCP inbound FinalMask editing now exposes modern upstream UDP mask types
+  like `salamander`, `mkcp-original`, `mkcp-aes128gcm`, `header-*`, and
+  `sudoku` instead of forcing the old `mkcp-legacy`-only UI path,
+- subscription/link-side finalmask normalization now preserves those modern
+  UDP mask types instead of dropping them from `fm=` output.
 
 ## Known Limits / Not Yet Closed
 
