@@ -1,0 +1,23 @@
+{
+  "udp": [
+    { "type": "mkcp-original" },
+    { "type": "mkcp-aes128gcm", "settings": { "password": "aes-pass" } },
+    { "type": "header-dns", "settings": { "domain": "edge.example.com" } },
+    { "type": "header-dtls" },
+    { "type": "header-srtp" },
+    { "type": "header-utp" },
+    { "type": "header-wechat" },
+    { "type": "header-wireguard" },
+    {
+      "type": "sudoku",
+      "settings": {
+        "password": "pw",
+        "ascii": "abc",
+        "customTable": "table-1",
+        "customTables": ["table-2"],
+        "paddingMin": 2,
+        "paddingMax": 8
+      }
+    }
+  ]
+}

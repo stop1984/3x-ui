@@ -855,6 +855,65 @@ func TestExtractKcpShareFields_FinalMaskLegacySeed(t *testing.T) {
 	}
 }
 
+func TestExtractKcpShareFields_FinalMaskAes128Gcm(t *testing.T) {
+	stream := map[string]any{
+		"finalmask": map[string]any{
+			"udp": []any{
+				map[string]any{
+					"type":     "mkcp-aes128gcm",
+					"settings": map[string]any{"password": "aes-pass"},
+				},
+			},
+		},
+	}
+	got := extractKcpShareFields(stream)
+	if got.headerType != "none" {
+		t.Fatalf("headerType = %q, want none", got.headerType)
+	}
+	if got.seed != "aes-pass" {
+		t.Fatalf("seed = %q, want aes-pass", got.seed)
+	}
+}
+
+func TestExtractKcpShareFields_FinalMaskHeaderDns(t *testing.T) {
+	stream := map[string]any{
+		"finalmask": map[string]any{
+			"udp": []any{
+				map[string]any{
+					"type":     "header-dns",
+					"settings": map[string]any{"domain": "edge.example.com"},
+				},
+			},
+		},
+	}
+	got := extractKcpShareFields(stream)
+	if got.headerType != "dns" {
+		t.Fatalf("headerType = %q, want dns", got.headerType)
+	}
+	if got.seed != "edge.example.com" {
+		t.Fatalf("seed = %q, want edge.example.com", got.seed)
+	}
+}
+
+func TestExtractKcpShareFields_FinalMaskHeaderWireguard(t *testing.T) {
+	stream := map[string]any{
+		"finalmask": map[string]any{
+			"udp": []any{
+				map[string]any{
+					"type": "header-wireguard",
+				},
+			},
+		},
+	}
+	got := extractKcpShareFields(stream)
+	if got.headerType != "wireguard" {
+		t.Fatalf("headerType = %q, want wireguard", got.headerType)
+	}
+	if got.seed != "" {
+		t.Fatalf("seed = %q, want empty", got.seed)
+	}
+}
+
 func TestKcpShareFields_ApplyToParams(t *testing.T) {
 	params := map[string]string{}
 	kcpShareFields{headerType: "wechat-video", seed: "s", mtu: 1350, tti: 50}.applyToParams(params)
@@ -915,6 +974,35 @@ func TestMarshalFinalMask_UnknownTypeIsDropped(t *testing.T) {
 	}
 	if _, ok := marshalFinalMask(fm); ok {
 		t.Fatal("unknown mask types should be dropped, leaving nothing to marshal")
+	}
+}
+
+func TestMarshalFinalMask_ModernUdpTypesAreKept(t *testing.T) {
+	fm := map[string]any{
+		"udp": []any{
+			map[string]any{"type": "salamander", "settings": map[string]any{"password": "swordfish"}},
+			map[string]any{"type": "mkcp-original"},
+			map[string]any{"type": "mkcp-aes128gcm", "settings": map[string]any{"password": "aes-pass"}},
+			map[string]any{"type": "header-dns", "settings": map[string]any{"domain": "edge.example.com"}},
+			map[string]any{"type": "header-wireguard"},
+			map[string]any{"type": "sudoku", "settings": map[string]any{"password": "pw"}},
+		},
+	}
+	out, ok := marshalFinalMask(fm)
+	if !ok {
+		t.Fatal("expected ok=true for modern udp finalmask types")
+	}
+	for _, needle := range []string{
+		`"type":"salamander"`,
+		`"type":"mkcp-original"`,
+		`"type":"mkcp-aes128gcm"`,
+		`"type":"header-dns"`,
+		`"type":"header-wireguard"`,
+		`"type":"sudoku"`,
+	} {
+		if !strings.Contains(out, needle) {
+			t.Fatalf("marshaled finalmask missing %s: %s", needle, out)
+		}
 	}
 }
 

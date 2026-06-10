@@ -192,3 +192,54 @@ exports[`FinalMaskStreamSettingsSchema fixtures > parses udp-mask byte-stably 1`
   ],
 }
 `;
+
+exports[`FinalMaskStreamSettingsSchema fixtures > parses udp-mask-modern byte-stably 1`] = `
+{
+  "tcp": [],
+  "udp": [
+    {
+      "type": "mkcp-original",
+    },
+    {
+      "settings": {
+        "password": "aes-pass",
+      },
+      "type": "mkcp-aes128gcm",
+    },
+    {
+      "settings": {
+        "domain": "edge.example.com",
+      },
+      "type": "header-dns",
+    },
+    {
+      "type": "header-dtls",
+    },
+    {
+      "type": "header-srtp",
+    },
+    {
+      "type": "header-utp",
+    },
+    {
+      "type": "header-wechat",
+    },
+    {
+      "type": "header-wireguard",
+    },
+    {
+      "settings": {
+        "ascii": "abc",
+        "customTable": "table-1",
+        "customTables": [
+          "table-2",
+        ],
+        "paddingMax": 8,
+        "paddingMin": 2,
+        "password": "pw",
+      },
+      "type": "sudoku",
+    },
+  ],
+}
+`;

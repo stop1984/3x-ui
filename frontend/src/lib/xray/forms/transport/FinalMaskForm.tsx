@@ -42,9 +42,16 @@ function defaultTcpMaskSettings(type: string): Record<string, unknown> {
 function defaultUdpMaskSettings(type: string): Record<string, unknown> {
   switch (type) {
     case 'salamander':
+    case 'mkcp-aes128gcm':
       return { password: '' };
+    case 'header-dns':
+      return { domain: '' };
     case 'mkcp-legacy':
       return { header: '', value: '' };
+    case 'sudoku':
+      return {
+        password: '', ascii: '', customTable: '', customTables: [''], paddingMin: 0, paddingMax: 0,
+      };
     case 'xdns':
       return { domains: [] };
     case 'xicmp':
@@ -357,7 +364,7 @@ function UdpMasksList({
               size="small"
               icon={<PlusOutlined />}
               onClick={() => {
-                const def = isHysteria ? 'salamander' : 'mkcp-legacy';
+                const def = isHysteria ? 'salamander' : (network === 'kcp' ? 'salamander' : 'mkcp-legacy');
                 add({ type: def, settings: defaultUdpMaskSettings(def) });
               }}
             />
@@ -404,12 +411,22 @@ function UdpMaskItem({
   const options = isHysteria
     ? [{ value: 'salamander', label: 'Salamander (Hysteria2)' }]
     : [
+      { value: 'salamander', label: 'Salamander' },
       { value: 'mkcp-legacy', label: 'mKCP Legacy' },
+      { value: 'mkcp-original', label: 'mKCP Original' },
+      { value: 'mkcp-aes128gcm', label: 'mKCP AES-128-GCM' },
+      { value: 'header-dns', label: 'Header DNS' },
+      { value: 'header-dtls', label: 'Header DTLS' },
+      { value: 'header-srtp', label: 'Header SRTP' },
+      { value: 'header-utp', label: 'Header uTP' },
+      { value: 'header-wechat', label: 'Header WeChat' },
+      { value: 'header-wireguard', label: 'Header WireGuard' },
       { value: 'xdns', label: 'xDNS' },
       { value: 'xicmp', label: 'xICMP' },
       { value: 'realm', label: 'Realm' },
       { value: 'header-custom', label: 'Header Custom' },
       { value: 'noise', label: 'Noise' },
+      { value: 'sudoku', label: 'Sudoku' },
     ];
 
   return (
@@ -447,6 +464,24 @@ function UdpMaskItem({
               </Form.Item>
             );
           }
+          if (type === 'mkcp-aes128gcm') {
+            return (
+              <Form.Item label="Password">
+                <Space.Compact block>
+                  <Form.Item name={[fieldName, 'settings', 'password']} noStyle>
+                    <Input placeholder="AES-128-GCM password" style={{ width: 'calc(100% - 32px)' }} />
+                  </Form.Item>
+                  <Button
+                    icon={<ReloadOutlined />}
+                    onClick={() => form.setFieldValue(
+                      [...absolutePath, 'settings', 'password'],
+                      RandomUtil.randomLowerAndNum(16),
+                    )}
+                  />
+                </Space.Compact>
+              </Form.Item>
+            );
+          }
           if (type === 'mkcp-legacy') {
             return (
               <>
@@ -468,6 +503,23 @@ function UdpMaskItem({
                 </Form.Item>
               </>
             );
+          }
+          if (type === 'header-dns') {
+            return (
+              <Form.Item label="Domain" name={[fieldName, 'settings', 'domain']}>
+                <Input placeholder="www.example.com" />
+              </Form.Item>
+            );
+          }
+          if (
+            type === 'mkcp-original'
+            || type === 'header-dtls'
+            || type === 'header-srtp'
+            || type === 'header-utp'
+            || type === 'header-wechat'
+            || type === 'header-wireguard'
+          ) {
+            return null;
           }
           if (type === 'xdns') {
             return (
@@ -516,6 +568,24 @@ function UdpMaskItem({
                 form={form}
                 absoluteSettingsPath={[...absolutePath, 'settings']}
               />
+            );
+          }
+          if (type === 'sudoku') {
+            return (
+              <>
+                <Form.Item label="Password" name={[fieldName, 'settings', 'password']}><Input /></Form.Item>
+                <Form.Item label="ASCII" name={[fieldName, 'settings', 'ascii']}><Input /></Form.Item>
+                <Form.Item label="Custom Table" name={[fieldName, 'settings', 'customTable']}><Input /></Form.Item>
+                <Form.Item label="Custom Tables" name={[fieldName, 'settings', 'customTables']}>
+                  <Select mode="tags" style={{ width: '100%' }} tokenSeparators={[',']} />
+                </Form.Item>
+                <Form.Item label="Padding Min" name={[fieldName, 'settings', 'paddingMin']}>
+                  <InputNumber min={0} />
+                </Form.Item>
+                <Form.Item label="Padding Max" name={[fieldName, 'settings', 'paddingMax']}>
+                  <InputNumber min={0} />
+                </Form.Item>
+              </>
             );
           }
           return null;

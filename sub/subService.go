@@ -296,6 +296,7 @@ func (s *SubService) boundSubClients(inbound *model.Inbound, subId string) ([]mo
 	}
 	return bound, nil
 }
+
 // projectThroughFallbackMaster mutates the inbound in place so its
 // Listen/Port/StreamSettings reflect the externally reachable master
 // when applicable. Covers both fallback mechanisms:
@@ -1740,13 +1741,22 @@ var kcpMaskToHeaderType = map[string]string{
 }
 
 var validFinalMaskUDPTypes = map[string]struct{}{
-	"salamander":    {},
-	"mkcp-legacy":   {},
-	"xdns":          {},
-	"xicmp":         {},
-	"noise":         {},
-	"header-custom": {},
-	"realm":         {},
+	"salamander":       {},
+	"mkcp-legacy":      {},
+	"mkcp-original":    {},
+	"mkcp-aes128gcm":   {},
+	"header-dns":       {},
+	"header-dtls":      {},
+	"header-srtp":      {},
+	"header-utp":       {},
+	"header-wechat":    {},
+	"header-wireguard": {},
+	"xdns":             {},
+	"xicmp":            {},
+	"noise":            {},
+	"header-custom":    {},
+	"sudoku":           {},
+	"realm":            {},
 }
 
 var validFinalMaskTCPTypes = map[string]struct{}{
@@ -1817,19 +1827,43 @@ func extractKcpShareFields(stream map[string]any) kcpShareFields {
 		if mask == nil {
 			continue
 		}
-		if maskType, _ := mask["type"].(string); maskType != "mkcp-legacy" {
-			continue
-		}
-
+		maskType, _ := mask["type"].(string)
 		settings, _ := mask["settings"].(map[string]any)
-		header, _ := settings["header"].(string)
-		value, _ := settings["value"].(string)
-		if header == "" {
-			fields.seed = value
-			continue
-		}
-		if mapped, ok := kcpMaskToHeaderType[header]; ok {
-			fields.headerType = mapped
+
+		switch maskType {
+		case "mkcp-legacy":
+			header, _ := settings["header"].(string)
+			value, _ := settings["value"].(string)
+			if header == "" {
+				fields.seed = value
+				continue
+			}
+			if mapped, ok := kcpMaskToHeaderType[header]; ok {
+				fields.headerType = mapped
+			}
+		case "mkcp-original":
+			fields.headerType = "none"
+			fields.seed = ""
+		case "mkcp-aes128gcm":
+			fields.headerType = "none"
+			if password, _ := settings["password"].(string); password != "" {
+				fields.seed = password
+			}
+		case "header-dns":
+			fields.headerType = "dns"
+			if domain, _ := settings["domain"].(string); domain != "" {
+				fields.seed = domain
+			}
+		case "header-dtls":
+			fields.headerType = "dtls"
+		case "header-srtp":
+			fields.headerType = "srtp"
+		case "header-utp":
+			fields.headerType = "utp"
+		case "header-wechat":
+			fields.headerType = "wechat-video"
+		case "header-wireguard":
+			fields.headerType = "wireguard"
 		}
 	}
 
