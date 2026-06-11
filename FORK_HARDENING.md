@@ -234,6 +234,29 @@ Effect:
 - shared clients no longer miss resets just because their traffic row was
   historically created under a different attached inbound.
 
+### `5433a2b1` - Use email-keyed traffic state in runtime inbound projection
+
+Problem:
+
+- runtime inbound projection for API paths filtered disabled clients by
+  `client_traffics.inbound_id = inbound.Id`,
+- shared client traffic rows are email-keyed and can carry a sibling inbound id,
+  so an inbound could still expose a disabled shared client just because the
+  traffic row owner pointed somewhere else.
+
+What changed:
+
+- changed `buildRuntimeInboundForAPI` to resolve enable state by client email,
+  not by traffic owner inbound id,
+- added regression coverage for a disabled shared client attached to two
+  inbounds while the shared traffic row still points at the sibling inbound.
+
+Effect:
+
+- runtime/API inbound projection now matches the shared traffic truth,
+- disabled shared clients no longer leak back into sibling inbound views after
+  stale owner drift.
+
 ### `d80bd892` - Make client edit + attachment sync a single backend operation
 
 Problem:
@@ -398,7 +421,7 @@ Live deployment verification:
 At the time of writing, the local host has already deployed the patched binary
 through commit:
 
-- `d374956d`
+- `5433a2b1`
 
 Local live binary:
 
@@ -406,7 +429,7 @@ Local live binary:
 
 Rollback artifact for the latest rollout:
 
-- `/root/backups/20260611T133003Z_xui_v330_resetall_membership`
+- `/root/backups/20260611T133400Z_xui_v330_runtime_projection`
 
 If this file is later pushed to GitHub, this section can be kept or trimmed;
 the commit history above is the important public part.
@@ -428,6 +451,8 @@ the commit history above is the important public part.
   of trusting the stale owner stored in `ClientTraffic.InboundId`,
 - inbound-wide traffic reset now uses canonical attachment membership instead
   of the stale owner stored in `client_traffics.inbound_id`,
+- runtime inbound projection now filters shared disabled clients by email-keyed
+  traffic state instead of trusting `client_traffics.inbound_id`,
 - mKCP inbound FinalMask editing now exposes modern upstream UDP mask types
   like `salamander`, `mkcp-original`, `mkcp-aes128gcm`, `header-*`, and
   `sudoku` instead of forcing the old `mkcp-legacy`-only UI path,
