@@ -171,3 +171,91 @@ func TestGetAllCountsDepletedNodeClientsByMembership(t *testing.T) {
 		t.Fatalf("node depleted count = %d, want 1", node.DepletedCount)
 	}
 }
+
+// GetNodeTree recomputes per-guid counts in recountByGuid. Shared
+// client_traffics rows can still point at a sibling local inbound, so the tree
+// view must resolve depletion by node membership rather than stale owner id.
+func TestGetNodeTreeCountsDepletedNodeClientsByMembership(t *testing.T) {
+	setupConflictDB(t)
+	db := database.GetDB()
+
+	if err := db.Create(&model.Node{
+		Id: 1, Name: "Node1", Address: "10.0.0.2", Port: 2053,
+		ApiToken: "t", Guid: "node1-guid", Status: "online",
+	}).Error; err != nil {
+		t.Fatalf("create node: %v", err)
+	}
+
+	localInbound := &model.Inbound{
+		UserId:         1,
+		Tag:            "tree-local-shared",
+		Enable:         true,
+		Port:           48101,
+		Protocol:       model.VLESS,
+		StreamSettings: `{"network":"tcp","security":"reality"}`,
+		Settings:       `{"clients":[{"id":"c62ce2eb-d7fd-44b0-b44b-7540797c6642","email":"tree-node-shared@example.com","enable":true}]}`,
+	}
+	nodeID := 1
+	nodeInbound := &model.Inbound{
+		UserId:         1,
+		Tag:            "tree-node-shared",
+		Enable:         true,
+		Port:           48102,
+		Protocol:       model.VLESS,
+		NodeID:         &nodeID,
+		OriginNodeGuid: "node1-guid",
+		StreamSettings: `{"network":"tcp","security":"reality"}`,
+		Settings:       `{"clients":[{"id":"c62ce2eb-d7fd-44b0-b44b-7540797c6642","email":"tree-node-shared@example.com","enable":true}]}`,
+	}
+	if err := db.Create(localInbound).Error; err != nil {
+		t.Fatalf("create local inbound: %v", err)
+	}
+	if err := db.Create(nodeInbound).Error; err != nil {
+		t.Fatalf("create node inbound: %v", err)
+	}
+
+	client := model.Client{
+		ID:         "c62ce2eb-d7fd-44b0-b44b-7540797c6642",
+		Email:      "tree-node-shared@example.com",
+		SubID:      "sub-tree-node-shared",
+		Enable:     true,
+		LimitIP:    1,
+		TotalGB:    1024,
+		ExpiryTime: 4102444800000,
+	}
+	inboundSvc := InboundService{}
+	if err := inboundSvc.clientService.SyncInbound(db, localInbound.Id, []model.Client{client}); err != nil {
+		t.Fatalf("SyncInbound local: %v", err)
+	}
+	if err := inboundSvc.clientService.SyncInbound(db, nodeInbound.Id, []model.Client{client}); err != nil {
+		t.Fatalf("SyncInbound node: %v", err)
+	}
+
+	if err := db.Create(&xray.ClientTraffic{
+		InboundId:  localInbound.Id,
+		Email:      client.Email,
+		Enable:     false,
+		ExpiryTime: 1,
+	}).Error; err != nil {
+		t.Fatalf("create shared traffic: %v", err)
+	}
+
+	tree, err := (&NodeService{}).GetNodeTree()
+	if err != nil {
+		t.Fatalf("GetNodeTree: %v", err)
+	}
+
+	var node *model.Node
+	for _, n := range tree {
+		if n.Guid == "node1-guid" {
+			node = n
+			break
+		}
+	}
+	if node == nil {
+		t.Fatalf("node1-guid not returned in tree")
+	}
+	if node.DepletedCount != 1 {
+		t.Fatalf("tree node depleted count = %d, want 1", node.DepletedCount)
+	}
+}

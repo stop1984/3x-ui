@@ -194,27 +194,72 @@ func (s *NodeService) recountByGuid(nodes []*model.Node, selfGuid string) {
 	now := time.Now().UnixMilli()
 	depletedByGuid := make(map[string]int)
 	if len(ids) > 0 {
-		type tRow struct {
-			InboundID  int `gorm:"column:inbound_id"`
-			Enable     bool
-			Total      int64
-			Up         int64
-			Down       int64
-			ExpiryTime int64 `gorm:"column:expiry_time"`
+		type membershipRow struct {
+			InboundID int    `gorm:"column:inbound_id"`
+			Email     string `gorm:"column:email"`
 		}
-		var tRows []tRow
-		if err := db.Table("client_traffics").
-			Select("inbound_id, enable, total, up, down, expiry_time").
-			Where("inbound_id IN ?", ids).Scan(&tRows).Error; err == nil {
-			for _, row := range tRows {
+		var memberships []membershipRow
+		if err := db.Raw(`
+			SELECT client_inbounds.inbound_id AS inbound_id, clients.email AS email
+			FROM client_inbounds
+			JOIN clients  ON clients.id = client_inbounds.client_id
+			JOIN inbounds ON inbounds.id = client_inbounds.inbound_id
+			WHERE inbounds.node_id IS NOT NULL
+		`).Scan(&memberships).Error; err == nil {
+			guidEmails := make(map[string]map[string]struct{})
+			allEmails := make([]string, 0, len(memberships))
+			for _, row := range memberships {
+				if row.Email == "" {
+					continue
+				}
 				guid, ok := effByInbound[row.InboundID]
 				if !ok {
 					continue
 				}
-				expired := row.ExpiryTime > 0 && row.ExpiryTime <= now
-				exhausted := row.Total > 0 && row.Up+row.Down >= row.Total
-				if expired || exhausted || !row.Enable {
-					depletedByGuid[guid]++
+				if guidEmails[guid] == nil {
+					guidEmails[guid] = make(map[string]struct{})
+				}
+				if _, exists := guidEmails[guid][row.Email]; exists {
+					continue
+				}
+				guidEmails[guid][row.Email] = struct{}{}
+				allEmails = append(allEmails, row.Email)
+			}
+
+			if len(allEmails) > 0 {
+				type trafficRow struct {
+					Email      string
+					Enable     bool
+					Total      int64
+					Up         int64
+					Down       int64
+					ExpiryTime int64 `gorm:"column:expiry_time"`
+				}
+				trafficByEmail := make(map[string]trafficRow, len(allEmails))
+				for _, batch := range chunkStrings(uniqueNonEmptyStrings(allEmails), sqliteMaxVars) {
+					var page []trafficRow
+					if err := db.Table("client_traffics").
+						Select("email, enable, total, up, down, expiry_time").
+						Where("email IN ?", batch).
+						Scan(&page).Error; err == nil {
+						for _, row := range page {
+							trafficByEmail[row.Email] = row
+						}
+					}
+				}
+
+				for guid, emails := range guidEmails {
+					for email := range emails {
+						row, ok := trafficByEmail[email]
+						if !ok {
+							continue
+						}
+						expired := row.ExpiryTime > 0 && row.ExpiryTime <= now
+						exhausted := row.Total > 0 && row.Up+row.Down >= row.Total
+						if expired || exhausted || !row.Enable {
+							depletedByGuid[guid]++
+						}
+					}
 				}
 			}
 		}
