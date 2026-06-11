@@ -733,6 +733,65 @@ func TestResetTrafficByEmailPrevalidatesAllAttachedInbounds(t *testing.T) {
 	}
 }
 
+func TestResetAllClientTrafficsUsesCanonicalInboundMembership(t *testing.T) {
+	setupClientMutationDB(t)
+
+	client := model.Client{
+		ID:         "8c672728-b0e3-4b6d-8f80-7582a4d2849a",
+		Email:      "reset-all-shared@example.com",
+		SubID:      "sub-reset-all-shared",
+		Enable:     true,
+		LimitIP:    1,
+		TotalGB:    1024,
+		ExpiryTime: 4102444800000,
+	}
+	ib1 := seedClientMutationInbound(t, "vless-reset-all-a", 27443, client)
+	ib2 := seedClientMutationInbound(t, "vless-reset-all-b", 28443, client)
+
+	inboundSvc := &InboundService{}
+	clientSvc := &ClientService{}
+	if err := clientSvc.SyncInbound(database.GetDB(), ib1, []model.Client{client}); err != nil {
+		t.Fatalf("SyncInbound ib1: %v", err)
+	}
+	if err := clientSvc.SyncInbound(database.GetDB(), ib2, []model.Client{client}); err != nil {
+		t.Fatalf("SyncInbound ib2: %v", err)
+	}
+
+	traffic := &xray.ClientTraffic{
+		InboundId: ib1,
+		Email:     client.Email,
+		Enable:    false,
+		Up:        222,
+		Down:      333,
+	}
+	if err := database.GetDB().Create(traffic).Error; err != nil {
+		t.Fatalf("seed traffic: %v", err)
+	}
+
+	if err := clientSvc.ResetAllClientTraffics(inboundSvc, ib2); err != nil {
+		t.Fatalf("ResetAllClientTraffics(%d): %v", ib2, err)
+	}
+
+	var updated xray.ClientTraffic
+	if err := database.GetDB().Where("email = ?", client.Email).First(&updated).Error; err != nil {
+		t.Fatalf("reload traffic: %v", err)
+	}
+	if !updated.Enable {
+		t.Fatalf("traffic enable remained false")
+	}
+	if updated.Up != 0 || updated.Down != 0 {
+		t.Fatalf("traffic counters = up:%d down:%d, want 0/0", updated.Up, updated.Down)
+	}
+
+	var inbound model.Inbound
+	if err := database.GetDB().First(&inbound, ib2).Error; err != nil {
+		t.Fatalf("reload inbound %d: %v", ib2, err)
+	}
+	if inbound.LastTrafficResetTime == 0 {
+		t.Fatalf("target inbound last_traffic_reset_time not updated")
+	}
+}
+
 func TestResetClientTrafficByEmailPrevalidatesAllAttachedInbounds(t *testing.T) {
 	setupClientMutationDB(t)
 

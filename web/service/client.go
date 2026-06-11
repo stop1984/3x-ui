@@ -4049,30 +4049,44 @@ func (s *ClientService) resetAllClientTrafficsLocked(id int) error {
 	now := time.Now().Unix() * 1000
 
 	if err := db.Transaction(func(tx *gorm.DB) error {
-		whereText := "inbound_id "
 		if id == -1 {
-			whereText += " > ?"
+			result := tx.Model(xray.ClientTraffic{}).
+				Where("1 = 1").
+				Updates(map[string]any{"enable": true, "up": 0, "down": 0})
+			if result.Error != nil {
+				return result.Error
+			}
 		} else {
-			whereText += " = ?"
+			var emails []string
+			if err := tx.Table("client_inbounds").
+				Distinct("clients.email").
+				Joins("JOIN clients ON clients.id = client_inbounds.client_id").
+				Where("client_inbounds.inbound_id = ?", id).
+				Order("clients.email ASC").
+				Pluck("clients.email", &emails).Error; err != nil {
+				return err
+			}
+
+			if len(emails) > 0 {
+				for _, batch := range chunkStrings(emails, sqlInChunk) {
+					result := tx.Model(xray.ClientTraffic{}).
+						Where("email IN ?", batch).
+						Updates(map[string]any{"enable": true, "up": 0, "down": 0})
+					if result.Error != nil {
+						return result.Error
+					}
+				}
+			}
 		}
 
-		result := tx.Model(xray.ClientTraffic{}).
-			Where(whereText, id).
-			Updates(map[string]any{"enable": true, "up": 0, "down": 0})
-
-		if result.Error != nil {
-			return result.Error
-		}
-
-		inboundWhereText := "id "
+		inboundWhereText := "id = ?"
+		inboundArgs := []any{id}
 		if id == -1 {
-			inboundWhereText += " > ?"
-		} else {
-			inboundWhereText += " = ?"
+			inboundWhereText = "id > ?"
 		}
 
-		result = tx.Model(model.Inbound{}).
-			Where(inboundWhereText, id).
+		result := tx.Model(model.Inbound{}).
+			Where(inboundWhereText, inboundArgs...).
 			Update("last_traffic_reset_time", now)
 
 		return result.Error
