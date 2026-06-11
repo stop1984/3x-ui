@@ -2261,9 +2261,9 @@ func (s *ClientService) EmailsByGroup(name string) ([]string, error) {
 	return emails, nil
 }
 
-func (s *ClientService) BulkResetTraffic(inboundSvc *InboundService, emails []string) (int, error) {
+func (s *ClientService) BulkResetTraffic(inboundSvc *InboundService, emails []string) (int, bool, error) {
 	if len(emails) == 0 {
-		return 0, nil
+		return 0, false, nil
 	}
 	seen := map[string]struct{}{}
 	cleanEmails := make([]string, 0, len(emails))
@@ -2279,17 +2279,22 @@ func (s *ClientService) BulkResetTraffic(inboundSvc *InboundService, emails []st
 		cleanEmails = append(cleanEmails, e)
 	}
 	if len(cleanEmails) == 0 {
-		return 0, nil
+		return 0, false, nil
 	}
 
 	affected := 0
+	needRestart := false
 	for _, email := range cleanEmails {
-		if _, err := s.ResetTrafficByEmail(inboundSvc, email); err != nil {
-			return affected, err
+		nr, err := s.ResetTrafficByEmail(inboundSvc, email)
+		if err != nil {
+			return affected, needRestart, err
+		}
+		if nr {
+			needRestart = true
 		}
 		affected++
 	}
-	return affected, nil
+	return affected, needRestart, nil
 }
 
 func (s *ClientService) CreateGroup(name string) error {

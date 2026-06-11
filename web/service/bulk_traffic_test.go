@@ -52,12 +52,15 @@ func TestBulkResetTrafficZeroesUsageAndReenables(t *testing.T) {
 	mkTraffic(t, ib.Id, "bob@x", 5, 5, 0, 0, true)
 	mkTraffic(t, ib.Id, "carol@x", 7, 0, 0, 0, true)
 
-	affected, err := svc.BulkResetTraffic(inboundSvc, []string{"alice@x", "bob@x"})
+	affected, needRestart, err := svc.BulkResetTraffic(inboundSvc, []string{"alice@x", "bob@x"})
 	if err != nil {
 		t.Fatalf("BulkResetTraffic: %v", err)
 	}
 	if affected != 2 {
 		t.Fatalf("expected 2 affected, got %d", affected)
+	}
+	if !needRestart {
+		t.Fatalf("needRestart = false, want true when runtime-add fallback is needed for a traffic-only disabled row")
 	}
 
 	for _, e := range []string{"alice@x", "bob@x"} {
@@ -99,12 +102,15 @@ func TestBulkResetTrafficReenablesCanonicalClientState(t *testing.T) {
 		t.Fatalf("markClientsDisabledInSettings: %v", err)
 	}
 
-	affected, err := svc.BulkResetTraffic(inboundSvc, []string{"alice@x"})
+	affected, needRestart, err := svc.BulkResetTraffic(inboundSvc, []string{"alice@x"})
 	if err != nil {
 		t.Fatalf("BulkResetTraffic: %v", err)
 	}
 	if affected != 1 {
 		t.Fatalf("expected 1 affected, got %d", affected)
+	}
+	if !needRestart {
+		t.Fatalf("needRestart = false, want true when canonical re-enable hits local runtime-absent path")
 	}
 
 	tr := trafficOf(t, "alice@x")
