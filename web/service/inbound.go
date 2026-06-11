@@ -3286,7 +3286,23 @@ func (s *InboundService) resetClientTrafficLocked(id int, clientEmail string) (b
 	}
 
 	if !traffic.Enable {
-		if matchedClient.Enable {
+		if !matchedClient.Enable {
+			// Depletion disable now flips the canonical shared client state across
+			// the central record plus every attached inbound. A reset must undo that
+			// through the same path; toggling only client_traffics.enable leaves the
+			// stored inbound settings and runtime user state disabled.
+			_, enableNeedRestart, enableErr := s.clientService.SetClientEnableByEmail(s, clientEmail, true)
+			if enableErr != nil {
+				return false, enableErr
+			}
+			if enableNeedRestart {
+				needRestart = true
+			}
+		} else {
+			// Keep the old protective path for partially-applied states where the
+			// client already reads as enabled in settings, but runtime/API disable
+			// previously succeeded and only client_traffics.enable still shows the
+			// disabled edge. In that case we still need to push/add the user back.
 			rt, push, dirty, perr := s.nodePushPlan(inbound)
 			if perr != nil {
 				return false, perr

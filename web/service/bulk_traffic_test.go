@@ -76,6 +76,66 @@ func TestBulkResetTrafficZeroesUsageAndReenables(t *testing.T) {
 	}
 }
 
+func TestBulkResetTrafficReenablesCanonicalClientState(t *testing.T) {
+	setupBulkDB(t)
+	svc := &ClientService{}
+	inboundSvc := &InboundService{}
+
+	source := []model.Client{
+		{Email: "alice@x", ID: "11111111-1111-1111-1111-111111111111", SubID: "sa", Enable: true},
+	}
+	ib := mkInbound(t, 21011, model.VLESS, clientsSettings(t, source))
+	if err := svc.SyncInbound(nil, ib.Id, source); err != nil {
+		t.Fatalf("seed linkage: %v", err)
+	}
+	mkTraffic(t, ib.Id, "alice@x", 10, 20, 0, 0, false)
+
+	if err := database.GetDB().Model(&model.ClientRecord{}).
+		Where("email = ?", "alice@x").
+		Updates(map[string]any{"enable": false}).Error; err != nil {
+		t.Fatalf("disable client record: %v", err)
+	}
+	if _, _, err := inboundSvc.markClientsDisabledInSettings(database.GetDB(), ib.Id, map[string]struct{}{"alice@x": {}}); err != nil {
+		t.Fatalf("markClientsDisabledInSettings: %v", err)
+	}
+
+	affected, err := svc.BulkResetTraffic(inboundSvc, []string{"alice@x"})
+	if err != nil {
+		t.Fatalf("BulkResetTraffic: %v", err)
+	}
+	if affected != 1 {
+		t.Fatalf("expected 1 affected, got %d", affected)
+	}
+
+	tr := trafficOf(t, "alice@x")
+	if tr.Up != 0 || tr.Down != 0 {
+		t.Fatalf("alice: expected up/down 0, got up=%d down=%d", tr.Up, tr.Down)
+	}
+	if !tr.Enable {
+		t.Fatalf("alice: expected traffic re-enabled")
+	}
+
+	rec, err := svc.GetRecordByEmail(nil, "alice@x")
+	if err != nil {
+		t.Fatalf("GetRecordByEmail: %v", err)
+	}
+	if !rec.Enable {
+		t.Fatalf("alice client record remained disabled")
+	}
+
+	reloaded, err := inboundSvc.GetInbound(ib.Id)
+	if err != nil {
+		t.Fatalf("GetInbound: %v", err)
+	}
+	jsonClients, err := inboundSvc.GetClients(reloaded)
+	if err != nil {
+		t.Fatalf("GetClients: %v", err)
+	}
+	if len(jsonClients) != 1 || !jsonClients[0].Enable {
+		t.Fatalf("embedded client remained disabled after bulk reset")
+	}
+}
+
 func TestDelDepletedRemovesOnlyDepleted(t *testing.T) {
 	setupBulkDB(t)
 	svc := &ClientService{}

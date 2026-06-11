@@ -2283,23 +2283,11 @@ func (s *ClientService) BulkResetTraffic(inboundSvc *InboundService, emails []st
 	}
 
 	affected := 0
-	err := submitTrafficWrite(func() error {
-		db := database.GetDB()
-		return db.Transaction(func(tx *gorm.DB) error {
-			for _, batch := range chunkStrings(cleanEmails, sqlInChunk) {
-				res := tx.Model(xray.ClientTraffic{}).
-					Where("email IN ?", batch).
-					Updates(map[string]any{"enable": true, "up": 0, "down": 0})
-				if res.Error != nil {
-					return res.Error
-				}
-				affected += int(res.RowsAffected)
-			}
-			return nil
-		})
-	})
-	if err != nil {
-		return 0, err
+	for _, email := range cleanEmails {
+		if _, err := s.ResetTrafficByEmail(inboundSvc, email); err != nil {
+			return affected, err
+		}
+		affected++
 	}
 	return affected, nil
 }

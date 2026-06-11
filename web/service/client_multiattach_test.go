@@ -733,6 +733,103 @@ func TestResetTrafficByEmailPrevalidatesAllAttachedInbounds(t *testing.T) {
 	}
 }
 
+func TestResetTrafficByEmailReenablesSharedClientState(t *testing.T) {
+	setupClientMutationDB(t)
+
+	client := model.Client{
+		ID:         "efbd0f3c-24b9-43aa-81c8-bd059e4c4493",
+		Email:      "reset-reenable-shared@example.com",
+		SubID:      "sub-reset-reenable-shared",
+		Enable:     true,
+		LimitIP:    1,
+		TotalGB:    1024,
+		ExpiryTime: 4102444800000,
+	}
+	ib1 := seedClientMutationInbound(t, "vless-reset-reenable-a", 27453, client)
+	ib2 := seedClientMutationInbound(t, "vless-reset-reenable-b", 28453, client)
+
+	inboundSvc := &InboundService{}
+	clientSvc := &ClientService{}
+	if err := clientSvc.SyncInbound(database.GetDB(), ib1, []model.Client{client}); err != nil {
+		t.Fatalf("SyncInbound ib1: %v", err)
+	}
+	if err := clientSvc.SyncInbound(database.GetDB(), ib2, []model.Client{client}); err != nil {
+		t.Fatalf("SyncInbound ib2: %v", err)
+	}
+
+	traffic := &xray.ClientTraffic{
+		InboundId: ib1,
+		Email:     client.Email,
+		Enable:    false,
+		Up:        444,
+		Down:      555,
+	}
+	if err := database.GetDB().Create(traffic).Error; err != nil {
+		t.Fatalf("seed traffic: %v", err)
+	}
+
+	if err := database.GetDB().Model(&model.ClientRecord{}).
+		Where("email = ?", client.Email).
+		Updates(map[string]any{"enable": false}).Error; err != nil {
+		t.Fatalf("disable client record: %v", err)
+	}
+	for _, ibID := range []int{ib1, ib2} {
+		if _, _, err := inboundSvc.markClientsDisabledInSettings(database.GetDB(), ibID, map[string]struct{}{client.Email: {}}); err != nil {
+			t.Fatalf("markClientsDisabledInSettings(%d): %v", ibID, err)
+		}
+	}
+
+	needRestart, err := clientSvc.ResetTrafficByEmail(inboundSvc, client.Email)
+	if err != nil {
+		t.Fatalf("ResetTrafficByEmail: %v", err)
+	}
+	if !needRestart {
+		t.Fatalf("needRestart = false, want true when runtime is absent")
+	}
+
+	var updated xray.ClientTraffic
+	if err := database.GetDB().Where("email = ?", client.Email).First(&updated).Error; err != nil {
+		t.Fatalf("reload traffic: %v", err)
+	}
+	if !updated.Enable {
+		t.Fatalf("traffic enable remained false")
+	}
+	if updated.Up != 0 || updated.Down != 0 {
+		t.Fatalf("traffic counters = up:%d down:%d, want 0/0", updated.Up, updated.Down)
+	}
+
+	rec, err := clientSvc.GetRecordByEmail(nil, client.Email)
+	if err != nil {
+		t.Fatalf("GetRecordByEmail: %v", err)
+	}
+	if !rec.Enable {
+		t.Fatalf("client record enable remained false")
+	}
+
+	for _, ibID := range []int{ib1, ib2} {
+		inbound, err := inboundSvc.GetInbound(ibID)
+		if err != nil {
+			t.Fatalf("GetInbound(%d): %v", ibID, err)
+		}
+		clients, err := inboundSvc.GetClients(inbound)
+		if err != nil {
+			t.Fatalf("GetClients(%d): %v", ibID, err)
+		}
+		found := false
+		for _, c := range clients {
+			if c.Email == client.Email {
+				found = true
+				if !c.Enable {
+					t.Fatalf("client remained disabled in inbound %d settings", ibID)
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("client not found in inbound %d after reset", ibID)
+		}
+	}
+}
+
 func TestResetAllClientTrafficsUsesCanonicalInboundMembership(t *testing.T) {
 	setupClientMutationDB(t)
 
