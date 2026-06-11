@@ -409,24 +409,24 @@ function UdpMaskItem({
   };
 
   const options = isHysteria
-    ? [{ value: 'salamander', label: 'Salamander (Hysteria2)' }]
+    ? [{ value: 'salamander', label: 'Salamander (Modern, Hysteria2)' }]
     : [
-      { value: 'salamander', label: 'Salamander' },
-      { value: 'mkcp-legacy', label: 'mKCP Legacy' },
-      { value: 'mkcp-original', label: 'mKCP Original' },
-      { value: 'mkcp-aes128gcm', label: 'mKCP AES-128-GCM' },
-      { value: 'header-dns', label: 'Header DNS' },
-      { value: 'header-dtls', label: 'Header DTLS' },
-      { value: 'header-srtp', label: 'Header SRTP' },
-      { value: 'header-utp', label: 'Header uTP' },
-      { value: 'header-wechat', label: 'Header WeChat' },
-      { value: 'header-wireguard', label: 'Header WireGuard' },
-      { value: 'xdns', label: 'xDNS' },
-      { value: 'xicmp', label: 'xICMP' },
-      { value: 'realm', label: 'Realm' },
-      { value: 'header-custom', label: 'Header Custom' },
-      { value: 'noise', label: 'Noise' },
-      { value: 'sudoku', label: 'Sudoku' },
+      { value: 'salamander', label: 'Salamander (Modern)' },
+      { value: 'mkcp-legacy', label: 'mKCP Legacy (Legacy)' },
+      { value: 'mkcp-original', label: 'mKCP Original (Compat)' },
+      { value: 'mkcp-aes128gcm', label: 'mKCP AES-128-GCM (Modern)' },
+      { value: 'header-dns', label: 'Header DNS (Legacy)' },
+      { value: 'header-dtls', label: 'Header DTLS (Legacy)' },
+      { value: 'header-srtp', label: 'Header SRTP (Legacy)' },
+      { value: 'header-utp', label: 'Header uTP (Legacy)' },
+      { value: 'header-wechat', label: 'Header WeChat (Legacy)' },
+      { value: 'header-wireguard', label: 'Header WireGuard (Legacy)' },
+      { value: 'xdns', label: 'xDNS (Modern)' },
+      { value: 'xicmp', label: 'xICMP (Modern)' },
+      { value: 'realm', label: 'Realm (Modern)' },
+      { value: 'header-custom', label: 'Header Custom (Advanced)' },
+      { value: 'noise', label: 'Noise (Advanced)' },
+      { value: 'sudoku', label: 'Sudoku (Advanced)' },
     ];
 
   return (
