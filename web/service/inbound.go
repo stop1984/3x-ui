@@ -3824,54 +3824,76 @@ func (s *InboundService) UpdateClientTrafficByEmail(email string, upload int64, 
 
 func (s *InboundService) SearchClientTraffic(query string) (traffic *xray.ClientTraffic, err error) {
 	db := database.GetDB()
-	inbound := &model.Inbound{}
-	traffic = &xray.ClientTraffic{}
-
-	// Search for inbound settings that contain the query
-	err = db.Model(model.Inbound{}).Where("settings LIKE ?", "%\""+query+"\"%").First(inbound).Error
+	email, err := s.findClientEmailBySearchQuery(db, query)
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
-			logger.Warningf("Inbound settings containing query %s not found: %v", query, err)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			logger.Warningf("Client query %s not found: %v", query, err)
 			return nil, err
 		}
-		logger.Errorf("Error searching for inbound settings with query %s: %v", query, err)
+		logger.Errorf("Error resolving client query %s: %v", query, err)
 		return nil, err
 	}
 
-	traffic.InboundId = inbound.Id
-
-	// Unmarshal settings to get clients
-	settings := map[string][]model.Client{}
-	if err := json.Unmarshal([]byte(inbound.Settings), &settings); err != nil {
-		logger.Errorf("Error unmarshalling inbound settings for inbound ID %d: %v", inbound.Id, err)
+	traffic, err = s.GetClientTrafficByEmail(email)
+	if err != nil {
+		logger.Errorf("Error retrieving ClientTraffic for email %s: %v", email, err)
 		return nil, err
 	}
-
-	clients := settings["clients"]
-	for _, client := range clients {
-		if (client.ID == query || client.Password == query) && client.Email != "" {
-			traffic.Email = client.Email
-			break
-		}
-	}
-
-	if traffic.Email == "" {
-		logger.Warningf("No client found with query %s in inbound ID %d", query, inbound.Id)
+	if traffic == nil {
+		logger.Warningf("ClientTraffic for email %s not found", email)
 		return nil, gorm.ErrRecordNotFound
 	}
 
-	// Retrieve ClientTraffic based on the found email
-	err = db.Model(xray.ClientTraffic{}).Where("email = ?", traffic.Email).First(traffic).Error
-	if err != nil {
-		if err == gorm.ErrRecordNotFound {
-			logger.Warningf("ClientTraffic for email %s not found: %v", traffic.Email, err)
-			return nil, err
-		}
-		logger.Errorf("Error retrieving ClientTraffic for email %s: %v", traffic.Email, err)
-		return nil, err
+	if inbound, findErr := s.findAttachedInboundByEmail(db, email); findErr == nil && inbound != nil {
+		traffic.InboundId = inbound.Id
+	} else if findErr != nil && !errors.Is(findErr, gorm.ErrRecordNotFound) {
+		return nil, findErr
 	}
 
 	return traffic, nil
+}
+
+func (s *InboundService) findClientEmailBySearchQuery(db *gorm.DB, query string) (string, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return "", gorm.ErrRecordNotFound
+	}
+
+	var rec model.ClientRecord
+	if err := db.Model(&model.ClientRecord{}).
+		Where("email = ? OR uuid = ? OR password = ? OR auth = ?", query, query, query, query).
+		Order("id ASC").
+		First(&rec).Error; err == nil {
+		if rec.Email != "" {
+			return rec.Email, nil
+		}
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", err
+	}
+
+	var inbounds []model.Inbound
+	if err := db.Model(model.Inbound{}).
+		Select("id, settings").
+		Where("settings LIKE ?", "%\""+query+"\"%").
+		Find(&inbounds).Error; err != nil {
+		return "", err
+	}
+	for _, inbound := range inbounds {
+		settings := map[string][]model.Client{}
+		if err := json.Unmarshal([]byte(inbound.Settings), &settings); err != nil {
+			continue
+		}
+		for _, client := range settings["clients"] {
+			if client.Email == "" {
+				continue
+			}
+			if client.ID == query || client.Password == query || client.Auth == query || client.Email == query {
+				return client.Email, nil
+			}
+		}
+	}
+
+	return "", gorm.ErrRecordNotFound
 }
 
 func (s *InboundService) GetInboundClientIps(clientEmail string) (string, error) {

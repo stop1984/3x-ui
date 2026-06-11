@@ -249,6 +249,81 @@ func TestGetClientTrafficTgBotUsesCanonicalClientRecords(t *testing.T) {
 	}
 }
 
+func TestSearchClientTrafficUsesCanonicalDetachedClientRecord(t *testing.T) {
+	setupBulkDB(t)
+	svc := &ClientService{}
+	inboundSvc := &InboundService{}
+
+	source := []model.Client{
+		{Email: "alice@x", ID: "11111111-1111-1111-1111-111111111111", SubID: "sa", Enable: true},
+	}
+	ib := mkInbound(t, 21014, model.VLESS, clientsSettings(t, source))
+	if err := svc.SyncInbound(nil, ib.Id, source); err != nil {
+		t.Fatalf("seed linkage: %v", err)
+	}
+	mkTraffic(t, ib.Id, "alice@x", 1, 2, 0, 0, true)
+
+	db := database.GetDB()
+	if err := db.Where("client_id IN (SELECT id FROM clients WHERE email = ?)", "alice@x").
+		Delete(&model.ClientInbound{}).Error; err != nil {
+		t.Fatalf("detach client_inbounds: %v", err)
+	}
+	if err := db.Delete(&model.Inbound{}, ib.Id).Error; err != nil {
+		t.Fatalf("delete inbound: %v", err)
+	}
+
+	tr, err := inboundSvc.SearchClientTraffic("11111111-1111-1111-1111-111111111111")
+	if err != nil {
+		t.Fatalf("SearchClientTraffic: %v", err)
+	}
+	if tr == nil {
+		t.Fatalf("expected traffic, got nil")
+	}
+	if tr.Email != "alice@x" {
+		t.Fatalf("unexpected email %q", tr.Email)
+	}
+	if tr.UUID != "11111111-1111-1111-1111-111111111111" {
+		t.Fatalf("UUID not enriched from clients table, got %q", tr.UUID)
+	}
+	if tr.SubId != "sa" {
+		t.Fatalf("SubId not enriched from clients table, got %q", tr.SubId)
+	}
+}
+
+func TestSearchClientTrafficCanonicalizesAttachedInbound(t *testing.T) {
+	setupBulkDB(t)
+	svc := &ClientService{}
+	inboundSvc := &InboundService{}
+
+	source := []model.Client{
+		{Email: "alice@x", ID: "11111111-1111-1111-1111-111111111111", SubID: "sa", Enable: true},
+	}
+	attached := mkInbound(t, 21015, model.VLESS, clientsSettings(t, source))
+	if err := svc.SyncInbound(nil, attached.Id, source); err != nil {
+		t.Fatalf("seed linkage: %v", err)
+	}
+	other := mkInbound(t, 21016, model.VLESS, clientsSettings(t, []model.Client{
+		{Email: "bob@x", ID: "22222222-2222-2222-2222-222222222222", SubID: "sb", Enable: true},
+	}))
+	if err := svc.SyncInbound(nil, other.Id, []model.Client{
+		{Email: "bob@x", ID: "22222222-2222-2222-2222-222222222222", SubID: "sb", Enable: true},
+	}); err != nil {
+		t.Fatalf("seed secondary linkage: %v", err)
+	}
+	mkTraffic(t, other.Id, "alice@x", 3, 4, 0, 0, true)
+
+	tr, err := inboundSvc.SearchClientTraffic("11111111-1111-1111-1111-111111111111")
+	if err != nil {
+		t.Fatalf("SearchClientTraffic: %v", err)
+	}
+	if tr == nil {
+		t.Fatalf("expected traffic, got nil")
+	}
+	if tr.InboundId != attached.Id {
+		t.Fatalf("SearchClientTraffic returned inbound %d, want canonical attached inbound %d", tr.InboundId, attached.Id)
+	}
+}
+
 func TestDelDepletedRemovesOnlyDepleted(t *testing.T) {
 	setupBulkDB(t)
 	svc := &ClientService{}
