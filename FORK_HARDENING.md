@@ -284,6 +284,33 @@ Effect:
 - shared clients no longer miss renewal just because their traffic row was
   historically created under a node inbound.
 
+### `c941edf0` - Count depleted node clients by canonical membership
+
+Problem:
+
+- node summary `DepletedCount` still scanned `client_traffics` by
+  `inbound_id IN (node-owned inbounds)`,
+- shared clients attached to a node but carrying a local-owner traffic row
+  could be exhausted, expired, or disabled without contributing to the node's
+  depleted count.
+
+What changed:
+
+- changed node depleted counting to resolve node membership through
+  `clients/client_inbounds`,
+- aggregated email-keyed traffic state separately and joined it back to node
+  membership by email,
+- added regression coverage for a shared client attached to both a local and a
+  node-owned inbound while the shared traffic row still points at the local
+  inbound.
+
+Effect:
+
+- node depleted counts now follow canonical membership instead of stale owner
+  inbound ids,
+- shared node clients no longer disappear from depleted counts just because the
+  shared traffic row was historically created under a local inbound.
+
 ### `d80bd892` - Make client edit + attachment sync a single backend operation
 
 Problem:
@@ -448,7 +475,7 @@ Live deployment verification:
 At the time of writing, the local host has already deployed the patched binary
 through commit:
 
-- `ef78c54f`
+- `c941edf0`
 
 Local live binary:
 
@@ -456,7 +483,7 @@ Local live binary:
 
 Rollback artifact for the latest rollout:
 
-- `/root/backups/20260611T133758Z_xui_v330_autorenew_membership`
+- `/root/backups/20260611T163448Z_xui_v330_node_depleted_membership`
 
 If this file is later pushed to GitHub, this section can be kept or trimmed;
 the commit history above is the important public part.
@@ -482,6 +509,8 @@ the commit history above is the important public part.
   traffic state instead of trusting `client_traffics.inbound_id`,
 - periodic auto-renew now selects clients through local attachment membership
   instead of skipping shared rows whose stale owner points at a node inbound,
+- node depleted counts now resolve client membership canonically instead of
+  trusting `client_traffics.inbound_id` for node attribution,
 - mKCP inbound FinalMask editing now exposes modern upstream UDP mask types
   like `salamander`, `mkcp-original`, `mkcp-aes128gcm`, `header-*`, and
   `sudoku` instead of forcing the old `mkcp-legacy`-only UI path,
