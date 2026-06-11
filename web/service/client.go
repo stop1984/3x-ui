@@ -4089,14 +4089,25 @@ func (s *ClientService) resetAllClientTrafficsLocked(id int) error {
 	return nil
 }
 
-func (s *ClientService) ResetAllTraffics() (bool, error) {
-	res := database.GetDB().Model(&xray.ClientTraffic{}).
-		Where("1 = 1").
-		Updates(map[string]any{"up": 0, "down": 0})
-	if res.Error != nil {
-		return false, res.Error
+func (s *ClientService) ResetAllTraffics(inboundSvc *InboundService) (bool, error) {
+	if inboundSvc == nil {
+		return false, common.NewError("inbound service is required")
 	}
-	return res.RowsAffected > 0, nil
+	var emails []string
+	if err := database.GetDB().Model(&xray.ClientTraffic{}).
+		Where("email <> ''").
+		Order("email ASC").
+		Pluck("email", &emails).Error; err != nil {
+		return false, err
+	}
+	if len(emails) == 0 {
+		return false, nil
+	}
+	_, needRestart, err := s.BulkResetTraffic(inboundSvc, emails)
+	if err != nil {
+		return needRestart, err
+	}
+	return needRestart, nil
 }
 
 func (s *ClientService) Detach(inboundSvc *InboundService, id int, inboundIds []int) (bool, error) {

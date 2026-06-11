@@ -142,6 +142,75 @@ func TestBulkResetTrafficReenablesCanonicalClientState(t *testing.T) {
 	}
 }
 
+func TestResetAllTrafficsReenablesCanonicalClientState(t *testing.T) {
+	setupBulkDB(t)
+	svc := &ClientService{}
+	inboundSvc := &InboundService{}
+
+	source := []model.Client{
+		{Email: "alice@x", ID: "11111111-1111-1111-1111-111111111111", SubID: "sa", Enable: true},
+		{Email: "bob@x", ID: "22222222-2222-2222-2222-222222222222", SubID: "sb", Enable: true},
+	}
+	ib := mkInbound(t, 21012, model.VLESS, clientsSettings(t, source))
+	if err := svc.SyncInbound(nil, ib.Id, source); err != nil {
+		t.Fatalf("seed linkage: %v", err)
+	}
+	mkTraffic(t, ib.Id, "alice@x", 10, 20, 0, 0, false)
+	mkTraffic(t, ib.Id, "bob@x", 7, 8, 0, 0, true)
+
+	if err := database.GetDB().Model(&model.ClientRecord{}).
+		Where("email = ?", "alice@x").
+		Updates(map[string]any{"enable": false}).Error; err != nil {
+		t.Fatalf("disable client record: %v", err)
+	}
+	if _, _, err := inboundSvc.markClientsDisabledInSettings(database.GetDB(), ib.Id, map[string]struct{}{"alice@x": {}}); err != nil {
+		t.Fatalf("markClientsDisabledInSettings: %v", err)
+	}
+
+	needRestart, err := svc.ResetAllTraffics(inboundSvc)
+	if err != nil {
+		t.Fatalf("ResetAllTraffics: %v", err)
+	}
+	if !needRestart {
+		t.Fatalf("needRestart = false, want true when global reset re-enables a disabled local client without runtime")
+	}
+
+	for _, email := range []string{"alice@x", "bob@x"} {
+		tr := trafficOf(t, email)
+		if tr.Up != 0 || tr.Down != 0 {
+			t.Fatalf("%s: expected up/down 0, got up=%d down=%d", email, tr.Up, tr.Down)
+		}
+		if !tr.Enable {
+			t.Fatalf("%s: expected traffic re-enabled", email)
+		}
+	}
+
+	rec, err := svc.GetRecordByEmail(nil, "alice@x")
+	if err != nil {
+		t.Fatalf("GetRecordByEmail: %v", err)
+	}
+	if !rec.Enable {
+		t.Fatalf("alice client record remained disabled")
+	}
+
+	reloaded, err := inboundSvc.GetInbound(ib.Id)
+	if err != nil {
+		t.Fatalf("GetInbound: %v", err)
+	}
+	jsonClients, err := inboundSvc.GetClients(reloaded)
+	if err != nil {
+		t.Fatalf("GetClients: %v", err)
+	}
+	if len(jsonClients) != 2 {
+		t.Fatalf("expected 2 embedded clients, got %d", len(jsonClients))
+	}
+	for _, c := range jsonClients {
+		if c.Email == "alice@x" && !c.Enable {
+			t.Fatalf("alice remained disabled in inbound settings after global reset")
+		}
+	}
+}
+
 func TestDelDepletedRemovesOnlyDepleted(t *testing.T) {
 	setupBulkDB(t)
 	svc := &ClientService{}

@@ -240,7 +240,7 @@ func (a *ClientController) attach(c *gin.Context) {
 }
 
 func (a *ClientController) resetAllTraffics(c *gin.Context) {
-	needRestart, err := a.clientService.ResetAllTraffics()
+	needRestart, err := a.clientService.ResetAllTraffics(&a.inboundService)
 	if err != nil {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
 		return
