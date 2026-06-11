@@ -173,6 +173,31 @@ Effect:
 - bulk reset now reports restart needs honestly instead of always forcing the
   panel into a pending-restart state.
 
+### `5dd3fbb9` - Use canonical path for global traffic reset
+
+Problem:
+
+- the clients-page “reset all traffics” path still used a shallow global
+  `UPDATE client_traffics SET up=0, down=0`,
+- unlike inbound-scoped and bulk reset paths, it did not go through canonical
+  shared-client re-enable logic,
+- so a global reset could still leave clients disabled in the central record or
+  in embedded inbound settings while the traffic rows looked reset.
+
+What changed:
+
+- changed `ClientService.ResetAllTraffics()` to enumerate traffic emails and
+  route through the same canonical bulk reset path,
+- threaded the new `inboundSvc` dependency through the controller and tests,
+- added regression coverage that global reset now re-enables the shared client
+  canonically instead of only zeroing counters.
+
+Effect:
+
+- global reset now matches the fork's shared-client model,
+- clients-page “reset all traffics” no longer has weaker semantics than bulk
+  reset or inbound-scoped reset.
+
 ### `301d1970` - Harden inbound flow normalization and update sync
 
 Problem:
@@ -584,7 +609,7 @@ Live deployment verification:
 At the time of writing, the local host has already deployed the patched binary
 through commit:
 
-- `0fe91a16`
+- `5dd3fbb9`
 
 Local live binary:
 
@@ -592,7 +617,7 @@ Local live binary:
 
 Rollback artifact for the latest rollout:
 
-- `/root/backups/20260611T184718Z_xui_v330_bulk_reset_restart_state`
+- `/root/backups/20260611T190235Z_xui_v330_global_reset_canonical`
 
 If this file is later pushed to GitHub, this section can be kept or trimmed;
 the commit history above is the important public part.
@@ -627,6 +652,8 @@ the commit history above is the important public part.
   instead of only flipping `client_traffics.enable`,
 - bulk reset no longer marks the panel as needing restart unless one of the
   underlying per-email resets actually needed it,
+- global traffic reset on the clients page now uses that same canonical reset
+  path instead of directly rewriting `client_traffics`,
 - `mKCP + TLS` can now be configured directly from the panel instead of only
   through manual DB/runtime edits,
 - mKCP inbound FinalMask editing now exposes modern upstream UDP mask types
