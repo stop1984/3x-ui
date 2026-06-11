@@ -609,7 +609,7 @@ Live deployment verification:
 At the time of writing, the local host has already deployed the patched binary
 through commit:
 
-- `e79342a1`
+- `c2d3fe57`
 
 Local live binary:
 
@@ -617,7 +617,7 @@ Local live binary:
 
 Rollback artifact for the latest rollout:
 
-- `/root/backups/20260611T211313Z_xui_v330_search_lookup_canonical`
+- `/root/backups/20260611T211711Z_xui_v330_check_ip_lookup_canonical`
 
 If this file is later pushed to GitHub, this section can be kept or trimmed;
 the commit history above is the important public part.
@@ -661,6 +661,10 @@ the commit history above is the important public part.
   `clients` table before falling back to legacy inbound JSON scans, and it
   rewrites the returned `InboundId` to the currently attached inbound instead
   of trusting a stale traffic-owner inbound id,
+- the background check-client-ip job now resolves a client's inbound through
+  canonical `clients/client_inbounds` attachment state before falling back to
+  legacy inbound JSON scans, so stale raw inbounds can no longer hijack IP
+  limit enforcement for a shared client,
 - `mKCP + TLS` can now be configured directly from the panel instead of only
   through manual DB/runtime edits,
 - mKCP inbound FinalMask editing now exposes modern upstream UDP mask types
