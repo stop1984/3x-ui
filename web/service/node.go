@@ -213,7 +213,6 @@ func (s *NodeService) GetAll() ([]*model.Node, error) {
 
 	now := time.Now().UnixMilli()
 	type trafficRow struct {
-		InboundID  int `gorm:"column:inbound_id"`
 		Email      string
 		Enable     bool
 		Total      int64
@@ -221,34 +220,63 @@ func (s *NodeService) GetAll() ([]*model.Node, error) {
 		Down       int64
 		ExpiryTime int64 `gorm:"column:expiry_time"`
 	}
-	var trafficRows []trafficRow
-	inboundIDs := make([]int, 0, len(nodeByInbound))
-	for id := range nodeByInbound {
-		inboundIDs = append(inboundIDs, id)
-	}
-	// Chunk the IN clause to avoid "too many SQL variables" on SQLite
-	// when there are many node-owned inbounds (common with many nodes).
-	// sqliteMaxVars is defined in this package (inbound.go).
-	for _, batch := range chunkInts(inboundIDs, sqliteMaxVars) {
-		var page []trafficRow
-		if err := db.Table("client_traffics").
-			Select("inbound_id, email, enable, total, up, down, expiry_time").
-			Where("inbound_id IN ?", batch).
-			Scan(&page).Error; err == nil {
-			trafficRows = append(trafficRows, page...)
-		}
-	}
 	depletedByNode := make(map[int]int)
-	if len(trafficRows) > 0 {
-		for _, row := range trafficRows {
-			nodeID, ok := nodeByInbound[row.InboundID]
-			if !ok {
-				continue
+	if len(nodeByInbound) > 0 {
+		type membershipRow struct {
+			NodeID int    `gorm:"column:node_id"`
+			Email  string `gorm:"column:email"`
+		}
+		var memberships []membershipRow
+		if err := db.Raw(`
+			SELECT DISTINCT inbounds.node_id AS node_id, clients.email AS email
+			FROM inbounds
+			JOIN client_inbounds ON client_inbounds.inbound_id = inbounds.id
+			JOIN clients ON clients.id = client_inbounds.client_id
+			WHERE inbounds.node_id IS NOT NULL
+		`).Scan(&memberships).Error; err == nil {
+			nodeEmails := make(map[int]map[string]struct{}, len(nodes))
+			allEmails := make([]string, 0, len(memberships))
+			for _, row := range memberships {
+				if row.Email == "" {
+					continue
+				}
+				if nodeEmails[row.NodeID] == nil {
+					nodeEmails[row.NodeID] = make(map[string]struct{})
+				}
+				if _, ok := nodeEmails[row.NodeID][row.Email]; ok {
+					continue
+				}
+				nodeEmails[row.NodeID][row.Email] = struct{}{}
+				allEmails = append(allEmails, row.Email)
 			}
-			expired := row.ExpiryTime > 0 && row.ExpiryTime <= now
-			exhausted := row.Total > 0 && row.Up+row.Down >= row.Total
-			if expired || exhausted || !row.Enable {
-				depletedByNode[nodeID]++
+
+			if len(allEmails) > 0 {
+				trafficByEmail := make(map[string]trafficRow, len(allEmails))
+				for _, batch := range chunkStrings(uniqueNonEmptyStrings(allEmails), sqliteMaxVars) {
+					var page []trafficRow
+					if err := db.Table("client_traffics").
+						Select("email, enable, total, up, down, expiry_time").
+						Where("email IN ?", batch).
+						Scan(&page).Error; err == nil {
+						for _, row := range page {
+							trafficByEmail[row.Email] = row
+						}
+					}
+				}
+
+				for nodeID, emails := range nodeEmails {
+					for email := range emails {
+						row, ok := trafficByEmail[email]
+						if !ok {
+							continue
+						}
+						expired := row.ExpiryTime > 0 && row.ExpiryTime <= now
+						exhausted := row.Total > 0 && row.Up+row.Down >= row.Total
+						if expired || exhausted || !row.Enable {
+							depletedByNode[nodeID]++
+						}
+					}
+				}
 			}
 		}
 	}

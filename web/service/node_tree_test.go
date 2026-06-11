@@ -5,6 +5,7 @@ import (
 
 	"github.com/mhsanaei/3x-ui/v3/database"
 	"github.com/mhsanaei/3x-ui/v3/database/model"
+	"github.com/mhsanaei/3x-ui/v3/xray"
 )
 
 // #4983: a transitive sub-node learned from a direct node must surface as its
@@ -77,5 +78,96 @@ func TestGetNodeTree_SurfacesTransitiveNodeNestedUnderParent(t *testing.T) {
 	}
 	if node3.InboundCount != 1 {
 		t.Errorf("transitive Node3 should host its 1 inbound, got %d", node3.InboundCount)
+	}
+}
+
+// Shared client_traffics rows are email-keyed and can point at a sibling local
+// inbound even when the client is also attached to a node-owned inbound. Node
+// depleted counts must follow node membership, not the stale owner inbound id.
+func TestGetAllCountsDepletedNodeClientsByMembership(t *testing.T) {
+	setupConflictDB(t)
+	db := database.GetDB()
+
+	if err := db.Create(&model.Node{
+		Id: 1, Name: "Node1", Address: "10.0.0.2", Port: 2053,
+		ApiToken: "t", Guid: "node1-guid", Status: "online",
+	}).Error; err != nil {
+		t.Fatalf("create node: %v", err)
+	}
+
+	localInbound := &model.Inbound{
+		UserId:         1,
+		Tag:            "local-shared",
+		Enable:         true,
+		Port:           48001,
+		Protocol:       model.VLESS,
+		StreamSettings: `{"network":"tcp","security":"reality"}`,
+		Settings:       `{"clients":[{"id":"64d6427b-7c01-462f-8a8a-a525778cc8f8","email":"node-shared@example.com","enable":true}]}`,
+	}
+	nodeID := 1
+	nodeInbound := &model.Inbound{
+		UserId:         1,
+		Tag:            "node-shared",
+		Enable:         true,
+		Port:           48002,
+		Protocol:       model.VLESS,
+		NodeID:         &nodeID,
+		OriginNodeGuid: "node1-guid",
+		StreamSettings: `{"network":"tcp","security":"reality"}`,
+		Settings:       `{"clients":[{"id":"64d6427b-7c01-462f-8a8a-a525778cc8f8","email":"node-shared@example.com","enable":true}]}`,
+	}
+	if err := db.Create(localInbound).Error; err != nil {
+		t.Fatalf("create local inbound: %v", err)
+	}
+	if err := db.Create(nodeInbound).Error; err != nil {
+		t.Fatalf("create node inbound: %v", err)
+	}
+
+	client := model.Client{
+		ID:         "64d6427b-7c01-462f-8a8a-a525778cc8f8",
+		Email:      "node-shared@example.com",
+		SubID:      "sub-node-shared",
+		Enable:     true,
+		LimitIP:    1,
+		TotalGB:    1024,
+		ExpiryTime: 4102444800000,
+	}
+	inboundSvc := InboundService{}
+	if err := inboundSvc.clientService.SyncInbound(db, localInbound.Id, []model.Client{client}); err != nil {
+		t.Fatalf("SyncInbound local: %v", err)
+	}
+	if err := inboundSvc.clientService.SyncInbound(db, nodeInbound.Id, []model.Client{client}); err != nil {
+		t.Fatalf("SyncInbound node: %v", err)
+	}
+
+	if err := db.Create(&xray.ClientTraffic{
+		InboundId:  localInbound.Id,
+		Email:      client.Email,
+		Enable:     false,
+		ExpiryTime: 1,
+	}).Error; err != nil {
+		t.Fatalf("create shared traffic: %v", err)
+	}
+
+	nodes, err := (&NodeService{}).GetAll()
+	if err != nil {
+		t.Fatalf("GetAll: %v", err)
+	}
+
+	var node *model.Node
+	for _, n := range nodes {
+		if n.Id == 1 {
+			node = n
+			break
+		}
+	}
+	if node == nil {
+		t.Fatalf("node 1 not returned")
+	}
+	if node.ClientCount != 1 {
+		t.Fatalf("node client count = %d, want 1", node.ClientCount)
+	}
+	if node.DepletedCount != 1 {
+		t.Fatalf("node depleted count = %d, want 1", node.DepletedCount)
 	}
 }
