@@ -16,6 +16,7 @@ import (
 	"github.com/mhsanaei/3x-ui/v3/database"
 	"github.com/mhsanaei/3x-ui/v3/database/model"
 	"github.com/mhsanaei/3x-ui/v3/logger"
+	"github.com/mhsanaei/3x-ui/v3/web/service"
 	"github.com/mhsanaei/3x-ui/v3/xray"
 
 	"gorm.io/gorm"
@@ -574,13 +575,38 @@ func getAPIPortFromConfigData(configData []byte) (int, error) {
 }
 
 func (j *CheckClientIpJob) getInboundByEmail(clientEmail string) (*model.Inbound, error) {
-	db := database.GetDB()
-	inbound := &model.Inbound{}
+	clientSvc := &service.ClientService{}
+	inboundSvc := &service.InboundService{}
 
-	err := db.Model(&model.Inbound{}).Where("settings LIKE ?", "%"+clientEmail+"%").First(inbound).Error
-	if err != nil {
+	if rec, err := clientSvc.GetRecordByEmail(nil, clientEmail); err == nil && rec != nil {
+		inboundIDs, idsErr := clientSvc.GetInboundIdsForRecord(rec.Id)
+		if idsErr != nil {
+			return nil, idsErr
+		}
+		for _, inboundID := range inboundIDs {
+			inbound, getErr := inboundSvc.GetInbound(inboundID)
+			if getErr != nil {
+				continue
+			}
+			clients, getErr := inboundSvc.GetClients(inbound)
+			if getErr != nil {
+				continue
+			}
+			for i := range clients {
+				if clients[i].Email == clientEmail {
+					return inbound, nil
+				}
+			}
+		}
+		return nil, gorm.ErrRecordNotFound
+	} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}
 
+	db := database.GetDB()
+	inbound := &model.Inbound{}
+	if err := db.Model(&model.Inbound{}).Where("settings LIKE ?", "%"+clientEmail+"%").First(inbound).Error; err != nil {
+		return nil, err
+	}
 	return inbound, nil
 }

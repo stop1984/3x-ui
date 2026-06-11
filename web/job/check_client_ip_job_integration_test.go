@@ -12,6 +12,8 @@ import (
 	"github.com/mhsanaei/3x-ui/v3/database"
 	"github.com/mhsanaei/3x-ui/v3/database/model"
 	xuilogger "github.com/mhsanaei/3x-ui/v3/logger"
+	"github.com/mhsanaei/3x-ui/v3/web/service"
+	"github.com/mhsanaei/3x-ui/v3/xray"
 	"github.com/op/go-logging"
 )
 
@@ -58,7 +60,7 @@ func setupIntegrationDB(t *testing.T) {
 
 // seed an inbound whose settings json has a single client with the
 // given email and ip limit.
-func seedInboundWithClient(t *testing.T, tag, email string, limitIp int) {
+func seedInboundWithClient(t *testing.T, tag, email string, limitIp int) *model.Inbound {
 	t.Helper()
 	settings := map[string]any{
 		"clients": []map[string]any{
@@ -83,6 +85,7 @@ func seedInboundWithClient(t *testing.T, tag, email string, limitIp int) {
 	if err := database.GetDB().Create(inbound).Error; err != nil {
 		t.Fatalf("seed inbound: %v", err)
 	}
+	return inbound
 }
 
 // seed an InboundClientIps row with the given blob.
@@ -168,6 +171,47 @@ func TestRun_DisabledFail2BanSkipsProbeAndBanLog(t *testing.T) {
 	}
 	if count != 0 {
 		t.Fatalf("disabled fail2ban should not persist IP-limit rows, got %d", count)
+	}
+}
+
+func TestGetInboundByEmailUsesCanonicalAttachment(t *testing.T) {
+	setupIntegrationDB(t)
+
+	const email = "shared-limit@x"
+
+	stale := seedInboundWithClient(t, "inbound-stale", email, 1)
+	attached := seedInboundWithClient(t, "inbound-attached", email, 2)
+
+	clientSvc := &service.ClientService{}
+	clients := []model.Client{{
+		Email:   email,
+		ID:      "11111111-1111-1111-1111-111111111111",
+		SubID:   "shared-sub",
+		Enable:  true,
+		LimitIP: 2,
+	}}
+	if err := clientSvc.SyncInbound(nil, attached.Id, clients); err != nil {
+		t.Fatalf("SyncInbound: %v", err)
+	}
+
+	if err := database.GetDB().Create(&xray.ClientTraffic{
+		InboundId: attached.Id,
+		Email:     email,
+		Enable:    true,
+	}).Error; err != nil {
+		t.Fatalf("seed traffic: %v", err)
+	}
+
+	j := NewCheckClientIpJob()
+	inbound, err := j.getInboundByEmail(email)
+	if err != nil {
+		t.Fatalf("getInboundByEmail: %v", err)
+	}
+	if inbound == nil {
+		t.Fatalf("expected inbound, got nil")
+	}
+	if inbound.Id != attached.Id {
+		t.Fatalf("getInboundByEmail returned stale inbound %d, want canonical attached inbound %d (stale raw inbound %d)", inbound.Id, attached.Id, stale.Id)
 	}
 }
 
