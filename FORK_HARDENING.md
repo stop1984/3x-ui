@@ -210,6 +210,30 @@ Effect:
   inbound JSON blob lagged behind,
 - copy/import flows keep shared `subId` state aligned across attached inbounds.
 
+### `d374956d` - Use canonical membership for inbound-wide traffic reset
+
+Problem:
+
+- `ResetAllClientTraffics(inboundId)` still reset traffic rows by
+  `client_traffics.inbound_id`,
+- shared clients attached to inbound `B` but “owned” by stale traffic row
+  inbound `A` could be skipped entirely when resetting all traffic for `B`.
+
+What changed:
+
+- changed inbound-scoped traffic reset to resolve attached client emails from
+  canonical `clients/client_inbounds` membership,
+- batched traffic resets by `email IN (...)` instead of trusting the stale
+  traffic owner inbound id,
+- kept global `ResetAllClientTraffics(-1)` behavior unchanged,
+- added regression coverage for shared-client reset through a sibling inbound.
+
+Effect:
+
+- inbound-wide traffic reset now matches the actual attachment graph,
+- shared clients no longer miss resets just because their traffic row was
+  historically created under a different attached inbound.
+
 ### `d80bd892` - Make client edit + attachment sync a single backend operation
 
 Problem:
@@ -374,7 +398,7 @@ Live deployment verification:
 At the time of writing, the local host has already deployed the patched binary
 through commit:
 
-- `9b7fff2b`
+- `d374956d`
 
 Local live binary:
 
@@ -382,7 +406,7 @@ Local live binary:
 
 Rollback artifact for the latest rollout:
 
-- `/root/backups/20260609T073917Z_xui_fork_patch_deploy_13`
+- `/root/backups/20260611T133003Z_xui_v330_resetall_membership`
 
 If this file is later pushed to GitHub, this section can be kept or trimmed;
 the commit history above is the important public part.
@@ -402,6 +426,8 @@ the commit history above is the important public part.
   first reset, so a corrupt later attachment cannot partially reset traffic,
 - shared-client email lookup now resolves through canonical attachments instead
   of trusting the stale owner stored in `ClientTraffic.InboundId`,
+- inbound-wide traffic reset now uses canonical attachment membership instead
+  of the stale owner stored in `client_traffics.inbound_id`,
 - mKCP inbound FinalMask editing now exposes modern upstream UDP mask types
   like `salamander`, `mkcp-original`, `mkcp-aes128gcm`, `header-*`, and
   `sudoku` instead of forcing the old `mkcp-legacy`-only UI path,
