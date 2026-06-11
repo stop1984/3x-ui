@@ -117,6 +117,42 @@ Effect:
 - shared node clients no longer disappear from the tree view just because the
   shared traffic row was historically created under a local inbound.
 
+### `3319a5c3` - Use canonical client state in traffic reset paths
+
+Problem:
+
+- reset paths still treated `client_traffics.enable` as if it were the whole
+  source of truth,
+- `disableInvalidClients()` already disables the shared client canonically:
+  central `clients.enable`, embedded inbound settings, runtime user state, and
+  `client_traffics.enable`,
+- but `ResetClientTraffic*` and `BulkResetTraffic` only flipped
+  `client_traffics.enable=true` and zeroed counters,
+- that left an inconsistent state where traffic looked re-enabled while the
+  client could still remain disabled in attached inbound settings and runtime.
+
+What changed:
+
+- changed `resetClientTrafficLocked()` so:
+  - when the attached client is really disabled in settings, reset first
+    re-enables the shared client through the canonical
+    `SetClientEnableByEmail()` path,
+  - when settings already say enabled but `client_traffics.enable=false`,
+    reset keeps the old protective runtime-add path for that partial-drift
+    scenario,
+- changed `BulkResetTraffic()` to stop doing raw table updates and instead call
+  the same canonical reset path per email,
+- added regressions for:
+  - shared-client reset re-enabling the central record plus every attachment,
+  - bulk reset no longer leaving the embedded client disabled while only the
+    traffic row changed.
+
+Effect:
+
+- reset and bulk-reset now agree with the fork's shared-client model,
+- “traffic re-enabled, but client still disabled in settings/runtime” is no
+  longer a normal outcome of a reset.
+
 ### `301d1970` - Harden inbound flow normalization and update sync
 
 Problem:
@@ -528,7 +564,7 @@ Live deployment verification:
 At the time of writing, the local host has already deployed the patched binary
 through commit:
 
-- `1b9deb49`
+- `3319a5c3`
 
 Local live binary:
 
@@ -536,7 +572,7 @@ Local live binary:
 
 Rollback artifact for the latest rollout:
 
-- `/root/backups/20260611T181530Z_xui_v330_node_tree_membership`
+- `/root/backups/20260611T183820Z_xui_v330_reset_canonical_state`
 
 If this file is later pushed to GitHub, this section can be kept or trimmed;
 the commit history above is the important public part.
@@ -567,6 +603,8 @@ the commit history above is the important public part.
 - node tree depleted counts now use that same canonical membership model
   instead of regressing to stale traffic-owner inbound ids during the final
   per-guid recount step,
+- traffic reset and bulk reset now re-enable the canonical shared client state
+  instead of only flipping `client_traffics.enable`,
 - `mKCP + TLS` can now be configured directly from the panel instead of only
   through manual DB/runtime edits,
 - mKCP inbound FinalMask editing now exposes modern upstream UDP mask types
