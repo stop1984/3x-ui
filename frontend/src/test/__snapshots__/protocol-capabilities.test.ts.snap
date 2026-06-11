@@ -72,6 +72,18 @@ exports[`protocol capability predicates > http-basic :: kcp/none 1`] = `
 }
 `;
 
+exports[`protocol capability predicates > http-basic :: kcp/tls 1`] = `
+{
+  "canEnableReality": false,
+  "canEnableStream": false,
+  "canEnableTls": false,
+  "canEnableTlsFlow": false,
+  "canEnableVisionSeed": false,
+  "isSS2022": false,
+  "isSSMultiUser": true,
+}
+`;
+
 exports[`protocol capability predicates > http-basic :: tcp/none 1`] = `
 {
   "canEnableReality": false,
@@ -229,6 +241,18 @@ exports[`protocol capability predicates > hysteria-basic :: httpupgrade/tls 1`] 
 `;
 
 exports[`protocol capability predicates > hysteria-basic :: kcp/none 1`] = `
+{
+  "canEnableReality": false,
+  "canEnableStream": true,
+  "canEnableTls": true,
+  "canEnableTlsFlow": false,
+  "canEnableVisionSeed": false,
+  "isSS2022": false,
+  "isSSMultiUser": true,
+}
+`;
+
+exports[`protocol capability predicates > hysteria-basic :: kcp/tls 1`] = `
 {
   "canEnableReality": false,
   "canEnableStream": true,
@@ -408,6 +432,18 @@ exports[`protocol capability predicates > mixed-basic :: kcp/none 1`] = `
 }
 `;
 
+exports[`protocol capability predicates > mixed-basic :: kcp/tls 1`] = `
+{
+  "canEnableReality": false,
+  "canEnableStream": false,
+  "canEnableTls": false,
+  "canEnableTlsFlow": false,
+  "canEnableVisionSeed": false,
+  "isSS2022": false,
+  "isSSMultiUser": true,
+}
+`;
+
 exports[`protocol capability predicates > mixed-basic :: tcp/none 1`] = `
 {
   "canEnableReality": false,
@@ -565,6 +601,18 @@ exports[`protocol capability predicates > mtproto-basic :: httpupgrade/tls 1`] =
 `;
 
 exports[`protocol capability predicates > mtproto-basic :: kcp/none 1`] = `
+{
+  "canEnableReality": false,
+  "canEnableStream": false,
+  "canEnableTls": false,
+  "canEnableTlsFlow": false,
+  "canEnableVisionSeed": false,
+  "isSS2022": false,
+  "isSSMultiUser": true,
+}
+`;
+
+exports[`protocol capability predicates > mtproto-basic :: kcp/tls 1`] = `
 {
   "canEnableReality": false,
   "canEnableStream": false,
@@ -736,7 +784,19 @@ exports[`protocol capability predicates > shadowsocks-2022 :: kcp/none 1`] = `
 {
   "canEnableReality": false,
   "canEnableStream": true,
-  "canEnableTls": false,
+  "canEnableTls": true,
+  "canEnableTlsFlow": false,
+  "canEnableVisionSeed": false,
+  "isSS2022": true,
+  "isSSMultiUser": true,
+}
+`;
+
+exports[`protocol capability predicates > shadowsocks-2022 :: kcp/tls 1`] = `
+{
+  "canEnableReality": false,
+  "canEnableStream": true,
+  "canEnableTls": true,
   "canEnableTlsFlow": false,
   "canEnableVisionSeed": false,
   "isSS2022": true,
@@ -904,7 +964,19 @@ exports[`protocol capability predicates > trojan-basic :: kcp/none 1`] = `
 {
   "canEnableReality": false,
   "canEnableStream": true,
-  "canEnableTls": false,
+  "canEnableTls": true,
+  "canEnableTlsFlow": false,
+  "canEnableVisionSeed": false,
+  "isSS2022": false,
+  "isSSMultiUser": true,
+}
+`;
+
+exports[`protocol capability predicates > trojan-basic :: kcp/tls 1`] = `
+{
+  "canEnableReality": false,
+  "canEnableStream": true,
+  "canEnableTls": true,
   "canEnableTlsFlow": false,
   "canEnableVisionSeed": false,
   "isSS2022": false,
@@ -1080,6 +1152,18 @@ exports[`protocol capability predicates > tunnel-basic :: kcp/none 1`] = `
 }
 `;
 
+exports[`protocol capability predicates > tunnel-basic :: kcp/tls 1`] = `
+{
+  "canEnableReality": false,
+  "canEnableStream": false,
+  "canEnableTls": false,
+  "canEnableTlsFlow": false,
+  "canEnableVisionSeed": false,
+  "isSS2022": false,
+  "isSSMultiUser": true,
+}
+`;
+
 exports[`protocol capability predicates > tunnel-basic :: tcp/none 1`] = `
 {
   "canEnableReality": false,
@@ -1240,7 +1324,19 @@ exports[`protocol capability predicates > vless-tcp-none :: kcp/none 1`] = `
 {
   "canEnableReality": false,
   "canEnableStream": true,
-  "canEnableTls": false,
+  "canEnableTls": true,
+  "canEnableTlsFlow": false,
+  "canEnableVisionSeed": false,
+  "isSS2022": false,
+  "isSSMultiUser": true,
+}
+`;
+
+exports[`protocol capability predicates > vless-tcp-none :: kcp/tls 1`] = `
+{
+  "canEnableReality": false,
+  "canEnableStream": true,
+  "canEnableTls": true,
   "canEnableTlsFlow": false,
   "canEnableVisionSeed": false,
   "isSS2022": false,
@@ -1408,7 +1504,19 @@ exports[`protocol capability predicates > vmess-basic :: kcp/none 1`] = `
 {
   "canEnableReality": false,
   "canEnableStream": true,
-  "canEnableTls": false,
+  "canEnableTls": true,
+  "canEnableTlsFlow": false,
+  "canEnableVisionSeed": false,
+  "isSS2022": false,
+  "isSSMultiUser": true,
+}
+`;
+
+exports[`protocol capability predicates > vmess-basic :: kcp/tls 1`] = `
+{
+  "canEnableReality": false,
+  "canEnableStream": true,
+  "canEnableTls": true,
   "canEnableTlsFlow": false,
   "canEnableVisionSeed": false,
   "isSS2022": false,
@@ -1573,6 +1681,18 @@ exports[`protocol capability predicates > wireguard-basic :: httpupgrade/tls 1`]
 `;
 
 exports[`protocol capability predicates > wireguard-basic :: kcp/none 1`] = `
+{
+  "canEnableReality": false,
+  "canEnableStream": false,
+  "canEnableTls": false,
+  "canEnableTlsFlow": false,
+  "canEnableVisionSeed": false,
+  "isSS2022": false,
+  "isSSMultiUser": true,
+}
+`;
+
+exports[`protocol capability predicates > wireguard-basic :: kcp/tls 1`] = `
 {
   "canEnableReality": false,
   "canEnableStream": false,

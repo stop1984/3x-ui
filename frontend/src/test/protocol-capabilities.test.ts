@@ -33,6 +33,7 @@ const STREAM_CASES: { network: string; security: string }[] = [
   { network: 'grpc',        security: 'tls' },
   { network: 'grpc',        security: 'reality' },
   { network: 'kcp',         security: 'none' },
+  { network: 'kcp',         security: 'tls' },
   { network: 'httpupgrade', security: 'none' },
   { network: 'httpupgrade', security: 'tls' },
   { network: 'xhttp',       security: 'none' },
@@ -71,4 +72,25 @@ describe('protocol capability predicates', () => {
       });
     }
   }
+});
+
+describe('mKCP TLS capability', () => {
+  it('allows TLS on kcp for stream-capable protocols that support TLS', () => {
+    expect(canEnableTls({
+      protocol: 'vless',
+      streamSettings: { network: 'kcp', security: 'tls' },
+    })).toBe(true);
+    expect(canEnableTls({
+      protocol: 'vmess',
+      streamSettings: { network: 'kcp', security: 'tls' },
+    })).toBe(true);
+    expect(canEnableTls({
+      protocol: 'trojan',
+      streamSettings: { network: 'kcp', security: 'tls' },
+    })).toBe(true);
+    expect(canEnableTls({
+      protocol: 'http',
+      streamSettings: { network: 'kcp', security: 'tls' },
+    })).toBe(false);
+  });
 });
