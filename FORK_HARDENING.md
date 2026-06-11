@@ -257,6 +257,33 @@ Effect:
 - disabled shared clients no longer leak back into sibling inbound views after
   stale owner drift.
 
+### `ef78c54f` - Use local attachments for auto-renew selection
+
+Problem:
+
+- periodic auto-renew still selected candidates through
+  `client_traffics.inbound_id NOT IN (node inbounds)`,
+- shared clients whose email-keyed traffic row still pointed at a node inbound
+  could miss renewal entirely even though they were attached to a local inbound.
+
+What changed:
+
+- changed auto-renew candidate selection to start from expired shared traffic
+  rows and then resolve local inbound membership through
+  `clients/client_inbounds`,
+- filtered renewal work to emails that still have at least one local attached
+  inbound,
+- kept remote-only rows out of the renewal path without trusting stale traffic
+  owner inbound ids,
+- added regression coverage for a shared client with a node-owned traffic row
+  and a local attached inbound.
+
+Effect:
+
+- auto-renew now follows canonical local membership,
+- shared clients no longer miss renewal just because their traffic row was
+  historically created under a node inbound.
+
 ### `d80bd892` - Make client edit + attachment sync a single backend operation
 
 Problem:
@@ -421,7 +448,7 @@ Live deployment verification:
 At the time of writing, the local host has already deployed the patched binary
 through commit:
 
-- `5433a2b1`
+- `ef78c54f`
 
 Local live binary:
 
@@ -429,7 +456,7 @@ Local live binary:
 
 Rollback artifact for the latest rollout:
 
-- `/root/backups/20260611T133400Z_xui_v330_runtime_projection`
+- `/root/backups/20260611T133758Z_xui_v330_autorenew_membership`
 
 If this file is later pushed to GitHub, this section can be kept or trimmed;
 the commit history above is the important public part.
@@ -453,6 +480,8 @@ the commit history above is the important public part.
   of the stale owner stored in `client_traffics.inbound_id`,
 - runtime inbound projection now filters shared disabled clients by email-keyed
   traffic state instead of trusting `client_traffics.inbound_id`,
+- periodic auto-renew now selects clients through local attachment membership
+  instead of skipping shared rows whose stale owner points at a node inbound,
 - mKCP inbound FinalMask editing now exposes modern upstream UDP mask types
   like `salamander`, `mkcp-original`, `mkcp-aes128gcm`, `header-*`, and
   `sudoku` instead of forcing the old `mkcp-legacy`-only UI path,
