@@ -153,6 +153,26 @@ Effect:
 - “traffic re-enabled, but client still disabled in settings/runtime” is no
   longer a normal outcome of a reset.
 
+### `0fe91a16` - Return restart state from bulk traffic reset
+
+Problem:
+
+- after switching `BulkResetTraffic()` to the canonical per-email reset path,
+  the controller still unconditionally called `SetToNeedRestart()`,
+- that meant the UI could flag a restart even when the underlying reset path
+  completed through live runtime updates and did not actually need one.
+
+What changed:
+
+- changed `BulkResetTraffic()` to return `needRestart` alongside `affected`,
+- threaded that through the client controller,
+- updated tests and service benchmarks for the new signature.
+
+Effect:
+
+- bulk reset now reports restart needs honestly instead of always forcing the
+  panel into a pending-restart state.
+
 ### `301d1970` - Harden inbound flow normalization and update sync
 
 Problem:
@@ -564,7 +584,7 @@ Live deployment verification:
 At the time of writing, the local host has already deployed the patched binary
 through commit:
 
-- `3319a5c3`
+- `0fe91a16`
 
 Local live binary:
 
@@ -572,7 +592,7 @@ Local live binary:
 
 Rollback artifact for the latest rollout:
 
-- `/root/backups/20260611T183820Z_xui_v330_reset_canonical_state`
+- `/root/backups/20260611T184718Z_xui_v330_bulk_reset_restart_state`
 
 If this file is later pushed to GitHub, this section can be kept or trimmed;
 the commit history above is the important public part.
@@ -605,6 +625,8 @@ the commit history above is the important public part.
   per-guid recount step,
 - traffic reset and bulk reset now re-enable the canonical shared client state
   instead of only flipping `client_traffics.enable`,
+- bulk reset no longer marks the panel as needing restart unless one of the
+  underlying per-email resets actually needed it,
 - `mKCP + TLS` can now be configured directly from the panel instead of only
   through manual DB/runtime edits,
 - mKCP inbound FinalMask editing now exposes modern upstream UDP mask types
