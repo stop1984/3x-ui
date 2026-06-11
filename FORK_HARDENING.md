@@ -86,6 +86,37 @@ Effect:
 - `mKCP + TLS` can now be configured directly in the panel UI,
 - the form behavior matches the already-supported Xray runtime behavior.
 
+### `1b9deb49` - Count tree depleted clients by canonical membership
+
+Problem:
+
+- `NodeService.GetNodeTree()` finishes with `recountByGuid()`, which rebuilds
+  per-guid `InboundCount`, `OnlineCount`, and `DepletedCount` for the read-only
+  node tree,
+- that recount path still derived depletion from
+  `client_traffics.inbound_id IN (node-owned inbounds)`,
+- so a shared client attached to a node inbound and to a sibling local inbound
+  could be counted correctly in `GetAll()` but then disappear again from the
+  tree view if its shared traffic row still pointed at the local inbound.
+
+What changed:
+
+- changed the tree recount path to resolve membership through
+  `clients + client_inbounds + inbounds`,
+- built per-guid email sets from canonical attachments,
+- loaded shared traffic truth by `email`,
+- computed depleted counts from email-keyed traffic state instead of stale
+  owner inbound ids,
+- added regression coverage for a shared client attached to both a local and a
+  node-owned inbound while the shared traffic row still points at the local
+  inbound.
+
+Effect:
+
+- `GetNodeTree()` now agrees with `GetAll()` on depleted node clients,
+- shared node clients no longer disappear from the tree view just because the
+  shared traffic row was historically created under a local inbound.
+
 ### `301d1970` - Harden inbound flow normalization and update sync
 
 Problem:
@@ -497,7 +528,7 @@ Live deployment verification:
 At the time of writing, the local host has already deployed the patched binary
 through commit:
 
-- `640298cf`
+- `1b9deb49`
 
 Local live binary:
 
@@ -505,7 +536,7 @@ Local live binary:
 
 Rollback artifact for the latest rollout:
 
-- `/root/backups/20260611T172238Z_xui_v330_mkcp_tls_ui`
+- `/root/backups/20260611T181530Z_xui_v330_node_tree_membership`
 
 If this file is later pushed to GitHub, this section can be kept or trimmed;
 the commit history above is the important public part.
@@ -533,6 +564,9 @@ the commit history above is the important public part.
   instead of skipping shared rows whose stale owner points at a node inbound,
 - node depleted counts now resolve client membership canonically instead of
   trusting `client_traffics.inbound_id` for node attribution,
+- node tree depleted counts now use that same canonical membership model
+  instead of regressing to stale traffic-owner inbound ids during the final
+  per-guid recount step,
 - `mKCP + TLS` can now be configured directly from the panel instead of only
   through manual DB/runtime edits,
 - mKCP inbound FinalMask editing now exposes modern upstream UDP mask types
