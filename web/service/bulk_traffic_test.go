@@ -211,6 +211,44 @@ func TestResetAllTrafficsReenablesCanonicalClientState(t *testing.T) {
 	}
 }
 
+func TestGetClientTrafficTgBotUsesCanonicalClientRecords(t *testing.T) {
+	setupBulkDB(t)
+	svc := &ClientService{}
+	inboundSvc := &InboundService{}
+
+	source := []model.Client{
+		{Email: "alice@x", ID: "11111111-1111-1111-1111-111111111111", SubID: "sa", Enable: true},
+	}
+	ib := mkInbound(t, 21013, model.VLESS, clientsSettings(t, source))
+	if err := svc.SyncInbound(nil, ib.Id, source); err != nil {
+		t.Fatalf("seed linkage: %v", err)
+	}
+	mkTraffic(t, ib.Id, "alice@x", 1, 2, 0, 0, true)
+
+	if err := database.GetDB().Model(&model.ClientRecord{}).
+		Where("email = ?", "alice@x").
+		Update("tg_id", int64(424242)).Error; err != nil {
+		t.Fatalf("set tg_id on client record: %v", err)
+	}
+
+	traffics, err := inboundSvc.GetClientTrafficTgBot(424242)
+	if err != nil {
+		t.Fatalf("GetClientTrafficTgBot: %v", err)
+	}
+	if len(traffics) != 1 {
+		t.Fatalf("expected 1 traffic, got %d", len(traffics))
+	}
+	if traffics[0].Email != "alice@x" {
+		t.Fatalf("unexpected email %q", traffics[0].Email)
+	}
+	if traffics[0].UUID != "11111111-1111-1111-1111-111111111111" {
+		t.Fatalf("UUID not enriched from client record, got %q", traffics[0].UUID)
+	}
+	if traffics[0].SubId != "sa" {
+		t.Fatalf("SubId not enriched from client record, got %q", traffics[0].SubId)
+	}
+}
+
 func TestDelDepletedRemovesOnlyDepleted(t *testing.T) {
 	setupBulkDB(t)
 	svc := &ClientService{}

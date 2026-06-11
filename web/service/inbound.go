@@ -3606,27 +3606,13 @@ func (s *InboundService) DelDepletedClients(id int) (err error) {
 
 func (s *InboundService) GetClientTrafficTgBot(tgId int64) ([]*xray.ClientTraffic, error) {
 	db := database.GetDB()
-	var inbounds []*model.Inbound
-
-	// Retrieve inbounds where settings contain the given tgId
-	err := db.Model(model.Inbound{}).Where("settings LIKE ?", fmt.Sprintf(`%%"tgId": %d%%`, tgId)).Find(&inbounds).Error
-	if err != nil && err != gorm.ErrRecordNotFound {
-		logger.Errorf("Error retrieving inbounds with tgId %d: %v", tgId, err)
-		return nil, err
-	}
-
 	var emails []string
-	for _, inbound := range inbounds {
-		clients, err := s.GetClients(inbound)
-		if err != nil {
-			logger.Errorf("Error retrieving clients for inbound %d: %v", inbound.Id, err)
-			continue
-		}
-		for _, client := range clients {
-			if client.TgID == tgId {
-				emails = append(emails, client.Email)
-			}
-		}
+	if err := db.Model(&model.ClientRecord{}).
+		Where("tg_id = ?", tgId).
+		Order("email ASC").
+		Pluck("email", &emails).Error; err != nil && err != gorm.ErrRecordNotFound {
+		logger.Errorf("Error retrieving client emails with tgId %d: %v", tgId, err)
+		return nil, err
 	}
 
 	// Chunked to stay under SQLite's bind-variable limit when a single Telegram
@@ -3635,7 +3621,7 @@ func (s *InboundService) GetClientTrafficTgBot(tgId int64) ([]*xray.ClientTraffi
 	traffics := make([]*xray.ClientTraffic, 0, len(uniqEmails))
 	for _, batch := range chunkStrings(uniqEmails, sqliteMaxVars) {
 		var page []*xray.ClientTraffic
-		if err = db.Model(xray.ClientTraffic{}).Where("email IN ?", batch).Find(&page).Error; err != nil {
+		if err := db.Model(xray.ClientTraffic{}).Where("email IN ?", batch).Find(&page).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
 				continue
 			}
