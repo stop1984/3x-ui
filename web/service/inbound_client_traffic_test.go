@@ -8,6 +8,7 @@ import (
 	"github.com/mhsanaei/3x-ui/v3/database"
 	"github.com/mhsanaei/3x-ui/v3/database/model"
 	"github.com/mhsanaei/3x-ui/v3/xray"
+	"gorm.io/gorm"
 )
 
 // TestAddClientTraffic_MatchesByEmail covers two scenarios that share one fix:
@@ -234,5 +235,128 @@ func TestBuildRuntimeInboundForAPIFiltersDisabledSharedClientDespiteStaleOwner(t
 	}
 	if len(cs) != 0 {
 		t.Fatalf("runtime inbound still exposed disabled shared client: %#v", cs)
+	}
+}
+
+// TestAutoRenewClientsUsesCanonicalLocalMembership ensures periodic renew does
+// not skip a shared client just because the shared client_traffics row still
+// points at a node inbound. The renewal decision must follow local attachments,
+// not stale owner inbound ids.
+func TestAutoRenewClientsUsesCanonicalLocalMembership(t *testing.T) {
+	dbDir := t.TempDir()
+	t.Setenv("XUI_DB_FOLDER", dbDir)
+	if err := database.InitDB(filepath.Join(dbDir, "x-ui.db")); err != nil {
+		t.Fatalf("InitDB: %v", err)
+	}
+	t.Cleanup(func() { _ = database.CloseDB() })
+
+	db := database.GetDB()
+	now := time.Now().UnixMilli()
+
+	client := model.Client{
+		ID:         "d985ef67-b5f6-47ae-b4ca-a5d01f9e44d9",
+		Email:      "renew-shared@example.com",
+		SubID:      "sub-renew-shared",
+		Enable:     true,
+		LimitIP:    1,
+		TotalGB:    1024,
+		ExpiryTime: now - 1000,
+		Reset:      30,
+	}
+	localInbound := &model.Inbound{
+		UserId:         1,
+		Tag:            "renew-local",
+		Enable:         true,
+		Port:           47101,
+		Protocol:       model.VLESS,
+		StreamSettings: `{"network":"tcp","security":"reality"}`,
+		Settings:       clientsSettings(t, []model.Client{client}),
+	}
+	nodeID := 77
+	nodeInbound := &model.Inbound{
+		UserId:         1,
+		Tag:            "renew-node",
+		Enable:         true,
+		Port:           47102,
+		Protocol:       model.VLESS,
+		NodeID:         &nodeID,
+		StreamSettings: `{"network":"tcp","security":"reality"}`,
+		Settings:       clientsSettings(t, []model.Client{client}),
+	}
+	if err := db.Create(localInbound).Error; err != nil {
+		t.Fatalf("create local inbound: %v", err)
+	}
+	if err := db.Create(nodeInbound).Error; err != nil {
+		t.Fatalf("create node inbound: %v", err)
+	}
+
+	svc := InboundService{}
+	if err := svc.clientService.SyncInbound(db, localInbound.Id, []model.Client{client}); err != nil {
+		t.Fatalf("SyncInbound local: %v", err)
+	}
+	if err := svc.clientService.SyncInbound(db, nodeInbound.Id, []model.Client{client}); err != nil {
+		t.Fatalf("SyncInbound node: %v", err)
+	}
+
+	if err := db.Create(&xray.ClientTraffic{
+		InboundId:  nodeInbound.Id,
+		Email:      client.Email,
+		Enable:     false,
+		ExpiryTime: now - 1000,
+		Reset:      30,
+		Up:         123,
+		Down:       456,
+	}).Error; err != nil {
+		t.Fatalf("create stale-owner renew traffic: %v", err)
+	}
+
+	var (
+		needRestart bool
+		renewed     int64
+	)
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		var err error
+		needRestart, renewed, err = svc.autoRenewClients(tx)
+		return err
+	}); err != nil {
+		t.Fatalf("autoRenewClients: %v", err)
+	}
+	if needRestart {
+		t.Fatalf("unexpected needRestart for local renewal path")
+	}
+	if renewed != 1 {
+		t.Fatalf("renewed count = %d, want 1", renewed)
+	}
+
+	var traffic xray.ClientTraffic
+	if err := db.Where("email = ?", client.Email).First(&traffic).Error; err != nil {
+		t.Fatalf("reload traffic: %v", err)
+	}
+	if !traffic.Enable {
+		t.Fatalf("traffic remained disabled after renew")
+	}
+	if traffic.Up != 0 || traffic.Down != 0 {
+		t.Fatalf("renewed traffic counters = up:%d down:%d, want 0/0", traffic.Up, traffic.Down)
+	}
+	if traffic.ExpiryTime <= now {
+		t.Fatalf("renewed expiry_time = %d, want > now %d", traffic.ExpiryTime, now)
+	}
+
+	reloaded, err := svc.GetInbound(localInbound.Id)
+	if err != nil {
+		t.Fatalf("GetInbound(local): %v", err)
+	}
+	cs, err := svc.GetClients(reloaded)
+	if err != nil {
+		t.Fatalf("GetClients(local): %v", err)
+	}
+	if len(cs) != 1 {
+		t.Fatalf("local inbound client count = %d, want 1", len(cs))
+	}
+	if cs[0].ExpiryTime <= now {
+		t.Fatalf("local inbound expiry_time = %d, want > now %d", cs[0].ExpiryTime, now)
+	}
+	if !cs[0].Enable {
+		t.Fatalf("local inbound client remained disabled after renew")
 	}
 }

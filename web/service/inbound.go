@@ -2510,7 +2510,6 @@ func (s *InboundService) autoRenewClients(tx *gorm.DB) (bool, int64, error) {
 
 	err = tx.Model(xray.ClientTraffic{}).
 		Where("reset > 0 and expiry_time > 0 and expiry_time <= ?", now).
-		Where("inbound_id NOT IN (?)", tx.Model(&model.Inbound{}).Select("id").Where("node_id IS NOT NULL")).
 		Find(&traffics).Error
 	if err != nil {
 		return false, 0, err
@@ -2529,23 +2528,49 @@ func (s *InboundService) autoRenewClients(tx *gorm.DB) (bool, int64, error) {
 		client   map[string]any
 	}
 
-	// Resolve the inbounds to renew through the client_inbounds link rather than
-	// client_traffics.inbound_id, which goes stale after an inbound is deleted and
-	// recreated and would otherwise skip the renew entirely.
 	renewEmails := make([]string, 0, len(traffics))
 	for _, traffic := range traffics {
 		renewEmails = append(renewEmails, traffic.Email)
 	}
+	localInboundByEmail := make(map[string]map[int]struct{})
 	for _, batch := range chunkStrings(renewEmails, sqliteMaxVars) {
-		var ids []int
+		type renewTarget struct {
+			Email     string `gorm:"column:email"`
+			InboundID int    `gorm:"column:inbound_id"`
+		}
+		var targets []renewTarget
 		if err = tx.Table("client_inbounds").
+			Select("clients.email AS email, client_inbounds.inbound_id AS inbound_id").
 			Joins("JOIN clients ON clients.id = client_inbounds.client_id").
+			Joins("JOIN inbounds ON inbounds.id = client_inbounds.inbound_id").
 			Where("clients.email IN ?", batch).
-			Distinct().
-			Pluck("client_inbounds.inbound_id", &ids).Error; err != nil {
+			Where("inbounds.node_id IS NULL").
+			Scan(&targets).Error; err != nil {
 			return false, 0, err
 		}
-		inbound_ids = append(inbound_ids, ids...)
+
+		for _, target := range targets {
+			if localInboundByEmail[target.Email] == nil {
+				localInboundByEmail[target.Email] = make(map[int]struct{})
+			}
+			localInboundByEmail[target.Email][target.InboundID] = struct{}{}
+		}
+	}
+
+	filteredTraffics := make([]*xray.ClientTraffic, 0, len(traffics))
+	for _, traffic := range traffics {
+		localInboundIDs := localInboundByEmail[traffic.Email]
+		if len(localInboundIDs) == 0 {
+			continue
+		}
+		filteredTraffics = append(filteredTraffics, traffic)
+		for inboundID := range localInboundIDs {
+			inbound_ids = append(inbound_ids, inboundID)
+		}
+	}
+	traffics = filteredTraffics
+	if len(traffics) == 0 {
+		return false, 0, nil
 	}
 	// Dedupe so an inbound hosting N expired clients is fetched and saved once
 	// per tick instead of N times across chunk boundaries.
