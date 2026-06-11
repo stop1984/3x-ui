@@ -609,7 +609,7 @@ Live deployment verification:
 At the time of writing, the local host has already deployed the patched binary
 through commit:
 
-- `5dd3fbb9`
+- `e79342a1`
 
 Local live binary:
 
@@ -617,7 +617,7 @@ Local live binary:
 
 Rollback artifact for the latest rollout:
 
-- `/root/backups/20260611T190235Z_xui_v330_global_reset_canonical`
+- `/root/backups/20260611T211313Z_xui_v330_search_lookup_canonical`
 
 If this file is later pushed to GitHub, this section can be kept or trimmed;
 the commit history above is the important public part.
@@ -654,6 +654,13 @@ the commit history above is the important public part.
   underlying per-email resets actually needed it,
 - global traffic reset on the clients page now uses that same canonical reset
   path instead of directly rewriting `client_traffics`,
+- tg-bot traffic lookup now resolves recipients from the canonical `clients`
+  table (`tg_id`) instead of scanning embedded inbound settings, so shared and
+  detached client records remain discoverable,
+- search-traffic lookup now resolves client identity through the canonical
+  `clients` table before falling back to legacy inbound JSON scans, and it
+  rewrites the returned `InboundId` to the currently attached inbound instead
+  of trusting a stale traffic-owner inbound id,
 - `mKCP + TLS` can now be configured directly from the panel instead of only
   through manual DB/runtime edits,
 - mKCP inbound FinalMask editing now exposes modern upstream UDP mask types
