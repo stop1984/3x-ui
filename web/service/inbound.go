@@ -1351,13 +1351,28 @@ func (s *InboundService) buildRuntimeInboundForAPI(tx *gorm.DB, inbound *model.I
 		return &runtimeInbound, nil
 	}
 
+	emails := make([]string, 0, len(clients))
+	for _, client := range clients {
+		c, ok := client.(map[string]any)
+		if !ok {
+			continue
+		}
+		email, _ := c["email"].(string)
+		if email == "" {
+			continue
+		}
+		emails = append(emails, email)
+	}
+
 	var clientStats []xray.ClientTraffic
-	err := tx.Model(xray.ClientTraffic{}).
-		Where("inbound_id = ?", inbound.Id).
-		Select("email", "enable").
-		Find(&clientStats).Error
-	if err != nil {
-		return nil, err
+	if len(emails) > 0 {
+		err := tx.Model(xray.ClientTraffic{}).
+			Where("email IN ?", emails).
+			Select("email", "enable").
+			Find(&clientStats).Error
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	enableMap := make(map[string]bool, len(clientStats))

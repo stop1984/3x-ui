@@ -157,3 +157,82 @@ func TestAdjustTraffics_DelayedStartConvertsDespiteStaleInboundId(t *testing.T) 
 		t.Errorf("inbound settings expiry not converted: %#v", cs)
 	}
 }
+
+// TestBuildRuntimeInboundForAPIFiltersDisabledSharedClientDespiteStaleOwner
+// covers the runtime-inbound projection used by panel/API paths. Shared
+// client_traffics rows are email-keyed and their inbound_id can point at a
+// sibling inbound; buildRuntimeInboundForAPI must still filter a disabled
+// client from the requested inbound's runtime config.
+func TestBuildRuntimeInboundForAPIFiltersDisabledSharedClientDespiteStaleOwner(t *testing.T) {
+	dbDir := t.TempDir()
+	t.Setenv("XUI_DB_FOLDER", dbDir)
+	if err := database.InitDB(filepath.Join(dbDir, "x-ui.db")); err != nil {
+		t.Fatalf("InitDB: %v", err)
+	}
+	t.Cleanup(func() { _ = database.CloseDB() })
+
+	db := database.GetDB()
+
+	client := model.Client{
+		ID:         "b6d53eb5-e178-449d-84b0-52b63d4890cb",
+		Email:      "runtime-shared@example.com",
+		SubID:      "sub-runtime-shared",
+		Enable:     true,
+		LimitIP:    1,
+		TotalGB:    1024,
+		ExpiryTime: 4102444800000,
+	}
+	ib1 := &model.Inbound{
+		UserId:         1,
+		Tag:            "runtime-shared-a",
+		Enable:         true,
+		Port:           47001,
+		Protocol:       model.VLESS,
+		StreamSettings: `{"network":"tcp","security":"reality"}`,
+		Settings:       clientsSettings(t, []model.Client{client}),
+	}
+	ib2 := &model.Inbound{
+		UserId:         1,
+		Tag:            "runtime-shared-b",
+		Enable:         true,
+		Port:           47002,
+		Protocol:       model.VLESS,
+		StreamSettings: `{"network":"tcp","security":"reality"}`,
+		Settings:       clientsSettings(t, []model.Client{client}),
+	}
+	if err := db.Create(ib1).Error; err != nil {
+		t.Fatalf("create ib1: %v", err)
+	}
+	if err := db.Create(ib2).Error; err != nil {
+		t.Fatalf("create ib2: %v", err)
+	}
+
+	svc := InboundService{}
+	if err := svc.clientService.SyncInbound(db, ib1.Id, []model.Client{client}); err != nil {
+		t.Fatalf("SyncInbound ib1: %v", err)
+	}
+	if err := svc.clientService.SyncInbound(db, ib2.Id, []model.Client{client}); err != nil {
+		t.Fatalf("SyncInbound ib2: %v", err)
+	}
+
+	if err := db.Create(&xray.ClientTraffic{
+		InboundId: ib1.Id,
+		Email:     client.Email,
+		Enable:    false,
+	}).Error; err != nil {
+		t.Fatalf("create shared disabled traffic: %v", err)
+	}
+
+	runtimeInbound, err := svc.buildRuntimeInboundForAPI(db, ib2)
+	if err != nil {
+		t.Fatalf("buildRuntimeInboundForAPI: %v", err)
+	}
+
+	cs, err := svc.GetClients(runtimeInbound)
+	if err != nil {
+		t.Fatalf("GetClients(runtimeInbound): %v", err)
+	}
+	if len(cs) != 0 {
+		t.Fatalf("runtime inbound still exposed disabled shared client: %#v", cs)
+	}
+}
