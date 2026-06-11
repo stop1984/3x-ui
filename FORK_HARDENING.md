@@ -64,6 +64,28 @@ added while integrating the fork onto `v3.3.0`.
 
 ## Deployed Patch Series
 
+### `640298cf` - Allow TLS on mKCP transports in form capabilities
+
+Problem:
+
+- the panel runtime already supported `mKCP + TLS`, and live inbounds could be
+  configured that way,
+- but the form capability matrix still treated `kcp` as TLS-ineligible, so the
+  UI would not expose TLS for `mKCP` transports and users had to fall back to
+  direct DB edits.
+
+What changed:
+
+- added `kcp` to the shared TLS-capability matrix used by both inbound and
+  outbound forms,
+- added explicit regression coverage for `vless/vmess/trojan + kcp + tls`,
+- updated capability snapshots to lock the new behavior.
+
+Effect:
+
+- `mKCP + TLS` can now be configured directly in the panel UI,
+- the form behavior matches the already-supported Xray runtime behavior.
+
 ### `301d1970` - Harden inbound flow normalization and update sync
 
 Problem:
@@ -475,7 +497,7 @@ Live deployment verification:
 At the time of writing, the local host has already deployed the patched binary
 through commit:
 
-- `c941edf0`
+- `640298cf`
 
 Local live binary:
 
@@ -483,7 +505,7 @@ Local live binary:
 
 Rollback artifact for the latest rollout:
 
-- `/root/backups/20260611T163448Z_xui_v330_node_depleted_membership`
+- `/root/backups/20260611T172238Z_xui_v330_mkcp_tls_ui`
 
 If this file is later pushed to GitHub, this section can be kept or trimmed;
 the commit history above is the important public part.
@@ -511,6 +533,8 @@ the commit history above is the important public part.
   instead of skipping shared rows whose stale owner points at a node inbound,
 - node depleted counts now resolve client membership canonically instead of
   trusting `client_traffics.inbound_id` for node attribution,
+- `mKCP + TLS` can now be configured directly from the panel instead of only
+  through manual DB/runtime edits,
 - mKCP inbound FinalMask editing now exposes modern upstream UDP mask types
   like `salamander`, `mkcp-original`, `mkcp-aes128gcm`, `header-*`, and
   `sudoku` instead of forcing the old `mkcp-legacy`-only UI path,
