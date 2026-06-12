@@ -5,6 +5,9 @@ This document tracks the source-level hardening work applied to the local
 It started as a `v3.1.0` hardening branch and was later manually rebased onto
 upstream `v3.3.0`.
 
+For reproducible build/test/deploy steps, see
+[FORK_RELEASE.md](./FORK_RELEASE.md).
+
 The goal is straightforward:
 
 - reduce `DB -> runtime config -> subscription -> UI` drift,
