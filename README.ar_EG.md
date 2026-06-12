@@ -1,4 +1,4 @@
-[English](/README.md) | [فارسی](/README.fa_IR.md) | [العربية](/README.ar_EG.md) | [中文](/README.zh_CN.md) | [Español](/README.es_ES.md) | [Русский](/README.ru_RU.md)
+[English](/README.md) | [فارسی](/README.fa_IR.md) | [العربية](/README.ar_EG.md) | [中文](/README.zh_CN.md) | [Español](/README.es_ES.md) | [Русский](/README.ru_RU.md) | [Türkçe](/README.tr_TR.md)
 
 <p align="center">
   <picture>
@@ -23,6 +23,29 @@
 
 > [!IMPORTANT]
 > هذا المشروع مخصص للاستخدام الشخصي فقط. يرجى عدم استخدامه لأغراض غير قانونية أو في بيئة إنتاجية.
+
+## ملاحظات خاصة بالـ fork
+
+يبقى هذا الـ fork قريبًا من upstream `3x-ui`، لكنه يضيف طبقة
+hardening أكثر صرامة للمشغلين الذين يعتمدون على:
+
+- عملاء shared / multi-attach،
+- اشتراكات JSON كمسار أساسي لتسليم إعدادات العميل،
+- إصلاحات على مستوى الشيفرة بدلًا من التعديل اليدوي المتكرر على SQLite،
+- تعافٍ أكثر أمانًا من drift بين `DB -> runtime -> subscription -> UI`.
+
+عمليًا، يركّز هذا الـ fork على:
+
+- تعديلات العملاء بشكل rollback-safe،
+- نموذج ملكية canonical باستخدام `clients + client_inbounds + client_traffics`,
+- الحفاظ على العملاء detached بدلًا من accidental destructive cleanup،
+- التعامل بشكل أكثر أمانًا مع صفوف legacy عبر bootstrap لها إلى الحالة canonical،
+- دعم اللوحة لسير عمل `mKCP` / `FinalMask` الحديثة المستخدمة من عملاء Xray الحاليين.
+
+توثيق خاص بالـ fork:
+
+- [FORK_HARDENING.md](./FORK_HARDENING.md) — سجل الترقيعات والفروق السلوكية عن upstream
+- [FORK_RELEASE.md](./FORK_RELEASE.md) — سير عمل قابل لإعادة الإنتاج لـ build و test و rollout
 
 ## الميزات
 

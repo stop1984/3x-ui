@@ -1,4 +1,4 @@
-[English](/README.md) | [فارسی](/README.fa_IR.md) | [العربية](/README.ar_EG.md) | [中文](/README.zh_CN.md) | [Español](/README.es_ES.md) | [Русский](/README.ru_RU.md)
+[English](/README.md) | [فارسی](/README.fa_IR.md) | [العربية](/README.ar_EG.md) | [中文](/README.zh_CN.md) | [Español](/README.es_ES.md) | [Русский](/README.ru_RU.md) | [Türkçe](/README.tr_TR.md)
 
 <p align="center">
   <picture>
@@ -23,6 +23,29 @@
 
 > [!IMPORTANT]
 > 本项目仅供个人使用。请勿将其用于非法目的，也请勿在生产环境中使用。
+
+## Fork 特有说明
+
+这个 fork 保持与上游 `3x-ui` 尽量接近，但为以下场景增加了更严格的
+hardening 层：
+
+- shared / multi-attach 客户端，
+- 以 JSON 订阅作为主要客户端分发路径，
+- 通过源码修复代替反复直接修改 SQLite，
+- 更安全地从 `DB -> runtime -> subscription -> UI` 漂移中恢复。
+
+在实践中，这个 fork 主要关注：
+
+- rollback-safe 的客户端变更，
+- 规范化的 `clients + client_inbounds + client_traffics` 归属模型，
+- 保留 detached 客户端，而不是被意外 destructive cleanup 删除，
+- 通过 bootstrap 回到规范状态，更安全地处理 legacy 记录，
+- 为当前 Xray 客户端使用的现代 `mKCP` / `FinalMask` 工作流提供面板支持。
+
+Fork 专属文档：
+
+- [FORK_HARDENING.md](./FORK_HARDENING.md) — 补丁历史以及与上游的行为差异
+- [FORK_RELEASE.md](./FORK_RELEASE.md) — 可复现的 build、test 与 rollout 流程
 
 ## 功能特性
 

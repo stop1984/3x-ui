@@ -24,6 +24,29 @@ Orijinal X-UI projesinin geliştirilmiş bir çatallaması (fork) olarak inşa e
 > [!IMPORTANT]
 > Bu proje yalnızca kişisel kullanım için tasarlanmıştır. Lütfen yasadışı amaçlar için veya üretim (production) ortamında kullanmayın.
 
+## Fork'a Özgü Notlar
+
+Bu fork, upstream `3x-ui`'ye yakın kalır; ancak aşağıdakilere dayanan
+operatörler için daha sıkı bir hardening katmanı ekler:
+
+- shared / multi-attach istemciler,
+- istemci dağıtımının ana yolu olarak JSON abonelikleri,
+- tekrarlayan doğrudan SQLite müdahalesi yerine kaynak seviyesinde düzeltmeler,
+- `DB -> runtime -> subscription -> UI` drift'inden daha güvenli toparlanma.
+
+Pratikte bu fork şu alanlara odaklanır:
+
+- rollback-safe istemci mutasyonları,
+- kanonik `clients + client_inbounds + client_traffics` sahiplik modeli,
+- kazara destructive cleanup yerine detached istemcilerin korunması,
+- legacy kayıtların kanonik duruma bootstrap edilerek daha güvenli işlenmesi,
+- güncel Xray istemcilerinin kullandığı modern `mKCP` / `FinalMask` iş akışları için panel desteği.
+
+Fork'a özel dokümantasyon:
+
+- [FORK_HARDENING.md](./FORK_HARDENING.md) — patch geçmişi ve upstream'e göre davranış farkları
+- [FORK_RELEASE.md](./FORK_RELEASE.md) — tekrarlanabilir build, test ve rollout akışı
+
 ## Özellikler
 
 - **Çoklu protokol destekli gelen bağlantılar (Inbounds)** — VLESS, VMess, Trojan, Shadowsocks, WireGuard, Hysteria2, HTTP, SOCKS (Karma), Dokodemo-door / Tunnel ve TUN.

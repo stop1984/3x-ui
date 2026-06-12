@@ -1,4 +1,4 @@
-[English](/README.md) | [فارسی](/README.fa_IR.md) | [العربية](/README.ar_EG.md) | [中文](/README.zh_CN.md) | [Español](/README.es_ES.md) | [Русский](/README.ru_RU.md)
+[English](/README.md) | [فارسی](/README.fa_IR.md) | [العربية](/README.ar_EG.md) | [中文](/README.zh_CN.md) | [Español](/README.es_ES.md) | [Русский](/README.ru_RU.md) | [Türkçe](/README.tr_TR.md)
 
 <p align="center">
   <picture>
@@ -23,6 +23,29 @@ Construido como un fork mejorado del proyecto X-UI original, 3X-UI añade un sop
 
 > [!IMPORTANT]
 > Este proyecto está destinado únicamente al uso personal. Por favor, no lo uses para fines ilegales ni en un entorno de producción.
+
+## Notas específicas del fork
+
+Este fork se mantiene cerca de upstream `3x-ui`, pero añade una capa de
+hardening más estricta para operadores que dependen de:
+
+- clientes shared / multi-attach,
+- suscripciones JSON como vía principal de entrega al cliente,
+- correcciones a nivel de código fuente en lugar de cirugía recurrente sobre SQLite,
+- una recuperación más segura ante drift entre `DB -> runtime -> subscription -> UI`.
+
+En la práctica, este fork se centra en:
+
+- mutaciones de clientes con rollback-safe,
+- propiedad canónica mediante `clients + client_inbounds + client_traffics`,
+- preservación de clientes detached en lugar de limpiezas destructivas accidentales,
+- manejo más seguro de filas legacy reinsertándolas en el estado canónico,
+- soporte en el panel para flujos modernos de `mKCP` / `FinalMask` usados por clientes Xray actuales.
+
+Documentación específica del fork:
+
+- [FORK_HARDENING.md](./FORK_HARDENING.md) — historial de parches y diferencias de comportamiento respecto a upstream
+- [FORK_RELEASE.md](./FORK_RELEASE.md) — flujo reproducible de build, test y rollout
 
 ## Características
 

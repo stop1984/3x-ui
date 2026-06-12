@@ -1,4 +1,4 @@
-[English](/README.md) | [فارسی](/README.fa_IR.md) | [العربية](/README.ar_EG.md) | [中文](/README.zh_CN.md) | [Español](/README.es_ES.md) | [Русский](/README.ru_RU.md)
+[English](/README.md) | [فارسی](/README.fa_IR.md) | [العربية](/README.ar_EG.md) | [中文](/README.zh_CN.md) | [Español](/README.es_ES.md) | [Русский](/README.ru_RU.md) | [Türkçe](/README.tr_TR.md)
 
 <p align="center">
   <picture>
@@ -23,6 +23,29 @@
 
 > [!IMPORTANT]
 > Этот проект предназначен только для личного использования. Пожалуйста, не используйте его в незаконных целях или в производственной среде.
+
+## Особенности форка
+
+Этот форк остаётся близким к upstream `3x-ui`, но добавляет более строгий
+слой hardening для операторов, которые опираются на:
+
+- shared / multi-attach клиентов,
+- JSON-подписки как основной способ доставки клиентских профилей,
+- исходниковые исправления вместо постоянной ручной правки SQLite,
+- более безопасное восстановление после drift между `DB -> runtime -> subscription -> UI`.
+
+На практике форк делает акцент на:
+
+- rollback-safe мутациях клиентов,
+- канонической модели владения `clients + client_inbounds + client_traffics`,
+- сохранении detached-клиентов вместо случайной destructive cleanup,
+- более безопасной нормализации legacy-записей через bootstrap в каноническое состояние,
+- поддержке в панели современных `mKCP` / `FinalMask` сценариев для актуальных Xray-клиентов.
+
+Документация по форку:
+
+- [FORK_HARDENING.md](./FORK_HARDENING.md) — история патчей и поведенческие отличия от upstream
+- [FORK_RELEASE.md](./FORK_RELEASE.md) — воспроизводимый build, test и rollout workflow
 
 ## Возможности
 

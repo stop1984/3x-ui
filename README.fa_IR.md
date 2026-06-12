@@ -1,4 +1,4 @@
-[English](/README.md) | [فارسی](/README.fa_IR.md) | [العربية](/README.ar_EG.md) | [中文](/README.zh_CN.md) | [Español](/README.es_ES.md) | [Русский](/README.ru_RU.md)
+[English](/README.md) | [فارسی](/README.fa_IR.md) | [العربية](/README.ar_EG.md) | [中文](/README.zh_CN.md) | [Español](/README.es_ES.md) | [Русский](/README.ru_RU.md) | [Türkçe](/README.tr_TR.md)
 
 <p align="center">
   <picture>
@@ -23,6 +23,29 @@
 
 > [!IMPORTANT]
 > این پروژه فقط برای استفاده‌ی شخصی در نظر گرفته شده است. لطفاً از آن برای اهداف غیرقانونی یا در محیط تولید (production) استفاده نکنید.
+
+## نکات مخصوص فورک
+
+این فورک تا حد زیادی به upstream `3x-ui` نزدیک می‌ماند، اما یک لایه
+hardening سخت‌گیرانه‌تر برای اپراتورهایی اضافه می‌کند که به موارد زیر متکی‌اند:
+
+- کلاینت‌های shared / multi-attach،
+- سابسکریپشن‌های JSON به‌عنوان مسیر اصلی تحویل به کلاینت،
+- رفع مشکل در سطح سورس به‌جای دست‌کاری مداوم مستقیم SQLite،
+- بازیابی امن‌تر از drift بین `DB -> runtime -> subscription -> UI`.
+
+در عمل، این فورک روی این موارد تمرکز دارد:
+
+- mutationهای کلاینت با rollback-safe،
+- مدل مالکیت canonical با `clients + client_inbounds + client_traffics`,
+- حفظ کلاینت‌های detached به‌جای destructive cleanup تصادفی،
+- مدیریت امن‌تر رکوردهای legacy با bootstrap کردن دوباره‌ی آن‌ها به حالت canonical،
+- پشتیبانی پنل از workflowهای مدرن `mKCP` / `FinalMask` که توسط کلاینت‌های جدید Xray استفاده می‌شوند.
+
+مستندات مخصوص فورک:
+
+- [FORK_HARDENING.md](./FORK_HARDENING.md) — تاریخچه‌ی patchها و تفاوت‌های رفتاری نسبت به upstream
+- [FORK_RELEASE.md](./FORK_RELEASE.md) — فرایند بازتولیدپذیر build، test و rollout
 
 ## ویژگی‌ها
 
