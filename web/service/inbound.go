@@ -3834,6 +3834,14 @@ func (s *InboundService) SearchClientTraffic(query string) (traffic *xray.Client
 		return nil, err
 	}
 
+	if _, recErr := s.clientService.GetRecordByEmail(db, email); errors.Is(recErr, gorm.ErrRecordNotFound) {
+		if _, bootErr := s.clientService.BootstrapLegacyClientRecordByEmail(s, email); bootErr != nil && !errors.Is(bootErr, gorm.ErrRecordNotFound) {
+			return nil, bootErr
+		}
+	} else if recErr != nil {
+		return nil, recErr
+	}
+
 	traffic, err = s.GetClientTrafficByEmail(email)
 	if err != nil {
 		logger.Errorf("Error retrieving ClientTraffic for email %s: %v", email, err)

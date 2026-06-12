@@ -578,7 +578,14 @@ func (j *CheckClientIpJob) getInboundByEmail(clientEmail string) (*model.Inbound
 	clientSvc := &service.ClientService{}
 	inboundSvc := &service.InboundService{}
 
-	if rec, err := clientSvc.GetRecordByEmail(nil, clientEmail); err == nil && rec != nil {
+	rec, err := clientSvc.GetRecordByEmail(nil, clientEmail)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		rec, err = clientSvc.BootstrapLegacyClientRecordByEmail(inboundSvc, clientEmail)
+	}
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	if rec != nil {
 		inboundIDs, idsErr := clientSvc.GetInboundIdsForRecord(rec.Id)
 		if idsErr != nil {
 			return nil, idsErr
@@ -599,8 +606,6 @@ func (j *CheckClientIpJob) getInboundByEmail(clientEmail string) (*model.Inbound
 			}
 		}
 		return nil, gorm.ErrRecordNotFound
-	} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, err
 	}
 
 	db := database.GetDB()

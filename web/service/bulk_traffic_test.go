@@ -324,6 +324,40 @@ func TestSearchClientTrafficCanonicalizesAttachedInbound(t *testing.T) {
 	}
 }
 
+func TestSearchClientTrafficBootstrapsLegacyClientRecord(t *testing.T) {
+	setupBulkDB(t)
+	inboundSvc := &InboundService{}
+	clientSvc := &ClientService{}
+
+	source := []model.Client{
+		{Email: "legacy-search@x", ID: "33333333-3333-3333-3333-333333333333", SubID: "sc", Enable: true},
+	}
+	ib := mkInbound(t, 21017, model.VLESS, clientsSettings(t, source))
+	mkTraffic(t, ib.Id, "legacy-search@x", 5, 6, 0, 0, true)
+
+	tr, err := inboundSvc.SearchClientTraffic("33333333-3333-3333-3333-333333333333")
+	if err != nil {
+		t.Fatalf("SearchClientTraffic: %v", err)
+	}
+	if tr == nil {
+		t.Fatalf("expected traffic, got nil")
+	}
+	rec, err := clientSvc.GetRecordByEmail(nil, "legacy-search@x")
+	if err != nil {
+		t.Fatalf("GetRecordByEmail after search bootstrap: %v", err)
+	}
+	if rec.UUID != "33333333-3333-3333-3333-333333333333" {
+		t.Fatalf("bootstrapped UUID = %q, want source UUID", rec.UUID)
+	}
+	inboundIDs, err := clientSvc.GetInboundIdsForRecord(rec.Id)
+	if err != nil {
+		t.Fatalf("GetInboundIdsForRecord: %v", err)
+	}
+	if len(inboundIDs) != 1 || inboundIDs[0] != ib.Id {
+		t.Fatalf("bootstrapped inbound ids = %v, want [%d]", inboundIDs, ib.Id)
+	}
+}
+
 func TestDelDepletedRemovesOnlyDepleted(t *testing.T) {
 	setupBulkDB(t)
 	svc := &ClientService{}

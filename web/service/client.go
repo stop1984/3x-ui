@@ -1826,7 +1826,7 @@ func (s *ClientService) DeleteByEmail(inboundSvc *InboundService, email string, 
 	}
 	rec, err := s.GetRecordByEmail(nil, email)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		rec, err = s.bootstrapLegacyClientRecordByEmail(inboundSvc, email)
+		rec, err = s.BootstrapLegacyClientRecordByEmail(inboundSvc, email)
 	}
 	if err == nil && rec != nil {
 		return s.Delete(inboundSvc, rec.Id, keepTraffic)
@@ -1837,7 +1837,7 @@ func (s *ClientService) DeleteByEmail(inboundSvc *InboundService, email string, 
 	return false, common.NewError(fmt.Sprintf("client %q not found in any inbound or client record", email))
 }
 
-func (s *ClientService) bootstrapLegacyClientRecordByEmail(inboundSvc *InboundService, email string) (*model.ClientRecord, error) {
+func (s *ClientService) BootstrapLegacyClientRecordByEmail(inboundSvc *InboundService, email string) (*model.ClientRecord, error) {
 	inboundIds, err := s.findInboundIdsByClientEmail(email)
 	if err != nil {
 		return nil, err
