@@ -24,6 +24,30 @@ Built as an enhanced fork of the original X-UI project, 3X-UI adds broader proto
 > [!IMPORTANT]
 > This project is intended for personal use only. Please do not use it for illegal purposes or in a production environment.
 
+## Fork-Specific Notes
+
+This fork stays close to upstream `3x-ui`, but adds a stricter hardening layer
+for operators who rely on:
+
+- shared / multi-attach clients,
+- JSON subscriptions as a primary client delivery path,
+- source-level fixes instead of recurring direct SQLite surgery,
+- safer recovery from stale `DB -> runtime -> subscription -> UI` drift.
+
+In practice, this fork focuses on:
+
+- rollback-safe client mutations,
+- canonical `clients + client_inbounds + client_traffics` ownership,
+- detached-client preservation instead of accidental destructive cleanup,
+- safer handling of legacy rows by bootstrapping them back into canonical state,
+- panel support for modern `mKCP` / `FinalMask` workflows used by current
+  Xray-based clients.
+
+Fork-specific documentation:
+
+- [FORK_HARDENING.md](./FORK_HARDENING.md) — patch history and behavioral changes from upstream
+- [FORK_RELEASE.md](./FORK_RELEASE.md) — reproducible build, test, and rollout workflow
+
 ## Features
 
 - **Multi-protocol inbounds** — VLESS, VMess, Trojan, Shadowsocks, WireGuard, Hysteria2, HTTP, SOCKS (Mixed), Dokodemo-door / Tunnel, and TUN.
