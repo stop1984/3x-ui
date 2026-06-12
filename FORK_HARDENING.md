@@ -609,7 +609,7 @@ Live deployment verification:
 At the time of writing, the local host has already deployed the patched binary
 through commit:
 
-- `47183f0c`
+- `e858d0ee`
 
 Local live binary:
 
@@ -617,7 +617,7 @@ Local live binary:
 
 Rollback artifact for the latest rollout:
 
-- `/root/backups/20260612T182437Z_xui_v330_legacy_delete_bootstrap`
+- `/root/backups/20260612T182841Z_xui_v330_legacy_lookup_bootstrap`
 
 If this file is later pushed to GitHub, this section can be kept or trimmed;
 the commit history above is the important public part.
@@ -669,6 +669,9 @@ the commit history above is the important public part.
   when the central `clients` row is missing; it first rehydrates canonical
   client state via `SyncInbound`, then reuses the normal rollback-safe delete
   path,
+- legacy search and IP-limit lookup paths now bootstrap canonical client state
+  before serving results, so raw inbound JSON is only a bootstrap source
+  instead of a long-lived alternate source of truth,
 - `mKCP + TLS` can now be configured directly from the panel instead of only
   through manual DB/runtime edits,
 - mKCP inbound FinalMask editing now exposes modern upstream UDP mask types
