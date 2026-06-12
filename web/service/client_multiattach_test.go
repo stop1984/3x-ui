@@ -605,6 +605,67 @@ func TestDeleteRollsBackWhenLaterInboundFails(t *testing.T) {
 	}
 }
 
+func TestDeleteByEmailBootstrapsLegacySharedClientRecord(t *testing.T) {
+	setupClientMutationDB(t)
+
+	client := model.Client{
+		ID:         "33d5f3d9-5b8d-4abc-a217-7f15e49a3d8b",
+		Email:      "legacy-delete@example.com",
+		SubID:      "sub-legacy-delete",
+		Enable:     true,
+		LimitIP:    1,
+		TotalGB:    1024,
+		ExpiryTime: 4102444800000,
+	}
+	ib1 := seedClientMutationInbound(t, "legacy-delete-a", 22601, client)
+	ib2 := seedClientMutationInbound(t, "legacy-delete-b", 22602, client)
+
+	inboundSvc := &InboundService{}
+	clientSvc := &ClientService{}
+
+	if err := database.GetDB().Create(&xray.ClientTraffic{
+		InboundId: ib1,
+		Email:     client.Email,
+		Enable:    true,
+		Up:        10,
+		Down:      20,
+	}).Error; err != nil {
+		t.Fatalf("seed traffic: %v", err)
+	}
+
+	needRestart, err := clientSvc.DeleteByEmail(inboundSvc, client.Email, false)
+	if err != nil {
+		t.Fatalf("DeleteByEmail: %v", err)
+	}
+	if !needRestart {
+		t.Fatalf("needRestart = false, want true when runtime is absent")
+	}
+
+	if inboundHasClientEmail(t, ib1, client.Email) {
+		t.Fatalf("legacy client still present in inbound %d", ib1)
+	}
+	if inboundHasClientEmail(t, ib2, client.Email) {
+		t.Fatalf("legacy client still present in inbound %d", ib2)
+	}
+	if _, err := clientSvc.GetRecordByEmail(nil, client.Email); err == nil {
+		t.Fatalf("client record for %s should be deleted after canonical delete", client.Email)
+	}
+	var trafficCount int64
+	if err := database.GetDB().Model(&xray.ClientTraffic{}).Where("email = ?", client.Email).Count(&trafficCount).Error; err != nil {
+		t.Fatalf("count traffic: %v", err)
+	}
+	if trafficCount != 0 {
+		t.Fatalf("traffic rows for %s remain: %d", client.Email, trafficCount)
+	}
+	var linkCount int64
+	if err := database.GetDB().Model(&model.ClientInbound{}).Count(&linkCount).Error; err != nil {
+		t.Fatalf("count client_inbounds: %v", err)
+	}
+	if linkCount != 0 {
+		t.Fatalf("client_inbounds should be cleaned, got %d", linkCount)
+	}
+}
+
 func TestResetClientTrafficUsesRequestedInboundForMultiAttachClient(t *testing.T) {
 	setupClientMutationDB(t)
 

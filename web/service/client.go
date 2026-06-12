@@ -1825,39 +1825,42 @@ func (s *ClientService) DeleteByEmail(inboundSvc *InboundService, email string, 
 		return false, common.NewError("client email is required")
 	}
 	rec, err := s.GetRecordByEmail(nil, email)
-	if err == nil {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		rec, err = s.bootstrapLegacyClientRecordByEmail(inboundSvc, email)
+	}
+	if err == nil && rec != nil {
 		return s.Delete(inboundSvc, rec.Id, keepTraffic)
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return false, err
 	}
-	inboundIds, idsErr := s.findInboundIdsByClientEmail(email)
-	if idsErr != nil {
-		return false, idsErr
+	return false, common.NewError(fmt.Sprintf("client %q not found in any inbound or client record", email))
+}
+
+func (s *ClientService) bootstrapLegacyClientRecordByEmail(inboundSvc *InboundService, email string) (*model.ClientRecord, error) {
+	inboundIds, err := s.findInboundIdsByClientEmail(email)
+	if err != nil {
+		return nil, err
 	}
 	if len(inboundIds) == 0 {
-		return false, common.NewError(fmt.Sprintf("client %q not found in any inbound or client record", email))
+		return nil, gorm.ErrRecordNotFound
 	}
-	needRestart := false
+
 	for _, ibId := range inboundIds {
-		nr, delErr := s.DelInboundClientByEmail(inboundSvc, ibId, email, false)
-		if delErr != nil {
-			return needRestart, delErr
+		inbound, getErr := inboundSvc.GetInbound(ibId)
+		if getErr != nil {
+			return nil, getErr
 		}
-		if nr {
-			needRestart = true
+		clients, getErr := inboundSvc.GetClients(inbound)
+		if getErr != nil {
+			return nil, getErr
 		}
-	}
-	if !keepTraffic {
-		db := database.GetDB()
-		if err := db.Where("email = ?", email).Delete(&xray.ClientTraffic{}).Error; err != nil {
-			return needRestart, err
-		}
-		if err := db.Where("client_email = ?", email).Delete(&model.InboundClientIps{}).Error; err != nil {
-			return needRestart, err
+		if syncErr := s.SyncInbound(database.GetDB(), ibId, clients); syncErr != nil {
+			return nil, syncErr
 		}
 	}
-	return needRestart, nil
+
+	return s.GetRecordByEmail(nil, email)
 }
 
 // findInboundIdsByClientEmail returns every inbound whose settings.clients[]
