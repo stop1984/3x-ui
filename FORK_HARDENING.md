@@ -609,7 +609,7 @@ Live deployment verification:
 At the time of writing, the local host has already deployed the patched binary
 through commit:
 
-- `c2d3fe57`
+- `47183f0c`
 
 Local live binary:
 
@@ -617,7 +617,7 @@ Local live binary:
 
 Rollback artifact for the latest rollout:
 
-- `/root/backups/20260611T211711Z_xui_v330_check_ip_lookup_canonical`
+- `/root/backups/20260612T182437Z_xui_v330_legacy_delete_bootstrap`
 
 If this file is later pushed to GitHub, this section can be kept or trimmed;
 the commit history above is the important public part.
@@ -665,6 +665,10 @@ the commit history above is the important public part.
   canonical `clients/client_inbounds` attachment state before falling back to
   legacy inbound JSON scans, so stale raw inbounds can no longer hijack IP
   limit enforcement for a shared client,
+- legacy `DeleteByEmail` no longer deletes through a separate raw-JSON path
+  when the central `clients` row is missing; it first rehydrates canonical
+  client state via `SyncInbound`, then reuses the normal rollback-safe delete
+  path,
 - `mKCP + TLS` can now be configured directly from the panel instead of only
   through manual DB/runtime edits,
 - mKCP inbound FinalMask editing now exposes modern upstream UDP mask types
