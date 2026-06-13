@@ -47,6 +47,7 @@ Fork-specific documentation:
 
 - [FORK_HARDENING.md](./FORK_HARDENING.md) — patch history and behavioral changes from upstream
 - [FORK_RELEASE.md](./FORK_RELEASE.md) — reproducible build, test, and rollout workflow
+- [CHANGELOG_FORK.md](./CHANGELOG_FORK.md) — fork release notes and operator-visible changes
 
 ## Features
 

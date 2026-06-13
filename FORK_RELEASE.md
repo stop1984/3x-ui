@@ -7,6 +7,8 @@ this document is narrower than [FORK_HARDENING.md](./FORK_HARDENING.md):
 - make live rollout predictable,
 - make future rebases less dependent on ad hoc terminal history.
 
+For public fork release notes, see [CHANGELOG_FORK.md](./CHANGELOG_FORK.md).
+
 ## Toolchain
 
 Current validated toolchain:
