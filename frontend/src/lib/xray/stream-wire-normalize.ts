@@ -130,6 +130,8 @@ export function normalizeXhttpForWire(
     delete out.headers;
   }
 
+  if (out.host === '') delete out.host;
+
   if (out.xPaddingObfsMode !== true) {
     delete out.xPaddingObfsMode;
     dropEmptyStrings(out, [

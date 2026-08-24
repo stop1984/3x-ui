@@ -322,6 +322,29 @@ func TestBuildXhttpExtra_LeavesDefaultClientSideFieldsOut(t *testing.T) {
 	}
 }
 
+func TestXhttpShareOmitsEmptyHost(t *testing.T) {
+	xhttp := map[string]any{
+		"path": "/direct-reality",
+		"host": "",
+		"mode": "stream-one",
+	}
+
+	params := map[string]string{}
+	applyXhttpExtraParams(xhttp, params)
+	if _, ok := params["host"]; ok {
+		t.Fatalf("empty direct-REALITY host must be omitted from URI params: %#v", params)
+	}
+	if params["path"] != "/direct-reality" || params["mode"] != "stream-one" {
+		t.Fatalf("xhttp path/mode were not preserved: %#v", params)
+	}
+
+	obj := map[string]any{}
+	applyVmessNetworkParams(map[string]any{"xhttpSettings": xhttp}, "xhttp", obj)
+	if _, ok := obj["host"]; ok {
+		t.Fatalf("empty direct-REALITY host must be omitted from JSON object: %#v", obj)
+	}
+}
+
 func TestCloneStringMap(t *testing.T) {
 	src := map[string]string{"a": "1", "b": "2"}
 	dst := cloneStringMap(src)

@@ -853,6 +853,20 @@ func applyPathAndHostObj(settings map[string]any, obj map[string]any) {
 	}
 }
 
+func applyXhttpPathAndHostParams(settings map[string]any, params map[string]string) {
+	applyPathAndHostParams(settings, params)
+	if params["host"] == "" {
+		delete(params, "host")
+	}
+}
+
+func applyXhttpPathAndHostObj(settings map[string]any, obj map[string]any) {
+	applyPathAndHostObj(settings, obj)
+	if host, ok := obj["host"].(string); ok && host == "" {
+		delete(obj, "host")
+	}
+}
+
 func applyShareNetworkParams(stream map[string]any, streamNetwork string, params map[string]string) {
 	switch streamNetwork {
 	case "tcp":
@@ -948,7 +962,7 @@ func applyVmessNetworkParams(stream map[string]any, network string, obj map[stri
 		applyPathAndHostObj(httpupgrade, obj)
 	case "xhttp":
 		xhttp, _ := stream["xhttpSettings"].(map[string]any)
-		applyPathAndHostObj(xhttp, obj)
+		applyXhttpPathAndHostObj(xhttp, obj)
 		if mode, ok := xhttp["mode"].(string); ok {
 			obj["mode"] = mode
 		}
@@ -1714,7 +1728,7 @@ func applyXhttpExtraParams(xhttp map[string]any, params map[string]string) {
 	if xhttp == nil {
 		return
 	}
-	applyPathAndHostParams(xhttp, params)
+	applyXhttpPathAndHostParams(xhttp, params)
 	if mode, ok := xhttp["mode"].(string); ok {
 		params["mode"] = mode
 	}

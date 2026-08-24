@@ -102,6 +102,23 @@ func TestSubJsonServiceNoFinalMaskWhenEmpty(t *testing.T) {
 	}
 }
 
+func TestSubJsonServiceOmitsEmptyXhttpHost(t *testing.T) {
+	stream := NewSubJsonService("", "", "", nil).streamData(`{
+		"network":"xhttp",
+		"security":"reality",
+		"xhttpSettings":{"path":"/direct-reality","host":"","mode":"stream-one"},
+		"realitySettings":{"target":"example.com:443","serverNames":["example.com"]}
+	}`)
+
+	xhttp, _ := stream["xhttpSettings"].(map[string]any)
+	if _, ok := xhttp["host"]; ok {
+		t.Fatalf("empty direct-REALITY host must be omitted from JSON subscription: %#v", xhttp)
+	}
+	if xhttp["mode"] != "stream-one" {
+		t.Fatalf("xhttp mode = %#v, want stream-one", xhttp["mode"])
+	}
+}
+
 func TestSubJsonServiceVlessFlattened(t *testing.T) {
 	inbound := &model.Inbound{Listen: "1.2.3.4", Port: 443, Protocol: model.VLESS, Settings: `{"encryption":"none"}`}
 	client := model.Client{ID: "uuid-1", Flow: "xtls-rprx-vision"}
