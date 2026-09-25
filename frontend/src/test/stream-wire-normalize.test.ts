@@ -89,6 +89,22 @@ describe('validateRealityMaxClientVer', () => {
 });
 
 describe('normalizeXhttpForWire stream-one', () => {
+  it('omits an empty direct host', () => {
+    const out = normalizeXhttpForWire(
+      {
+        path: '/direct-reality',
+        host: '',
+        mode: 'stream-one',
+        xPaddingBytes: '100-1000',
+      },
+      'inbound',
+    );
+
+    expect(out).not.toHaveProperty('host');
+    expect(out.path).toBe('/direct-reality');
+    expect(out.mode).toBe('stream-one');
+  });
+
   it('drops packet-up and stream-up-only fields on inbound', () => {
     const out = normalizeXhttpForWire(
       {

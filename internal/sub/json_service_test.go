@@ -365,6 +365,23 @@ func TestSubJsonServiceGlobalMuxWhenNoXmux(t *testing.T) {
 	}
 }
 
+func TestSubJsonServiceOmitsEmptyXhttpHost(t *testing.T) {
+	stream := NewSubJsonService("", "", "", "", nil).streamData(`{
+		"network":"xhttp",
+		"security":"reality",
+		"xhttpSettings":{"path":"/direct-reality","host":"","mode":"stream-one"},
+		"realitySettings":{"target":"example.com:443","serverNames":["example.com"]}
+	}`, "")
+
+	xhttp, _ := stream["xhttpSettings"].(map[string]any)
+	if _, ok := xhttp["host"]; ok {
+		t.Fatalf("empty direct XHTTP host must be omitted from JSON subscription: %#v", xhttp)
+	}
+	if xhttp["mode"] != "stream-one" {
+		t.Fatalf("xhttp mode = %#v, want stream-one", xhttp["mode"])
+	}
+}
+
 func realitySpiderXFromStream(t *testing.T, svc *SubJsonService, clientKey string) string {
 	t.Helper()
 	stream := svc.streamData(`{

@@ -251,6 +251,11 @@ export function normalizeXhttpForWire(
     delete out.headers;
   }
 
+  // A direct XHTTP transport has no virtual host. Keep the field absent rather
+  // than serializing an empty Host value that some clients interpret as an
+  // explicit override.
+  if (out.host === '') delete out.host;
+
   if (out.xPaddingObfsMode !== true) {
     delete out.xPaddingObfsMode;
     dropEmptyStrings(out, ['xPaddingKey', 'xPaddingHeader', 'xPaddingPlacement', 'xPaddingMethod']);

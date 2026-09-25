@@ -1,7 +1,12 @@
 /// <reference types="vite/client" />
 import { describe, expect, it } from 'vitest';
 
-import { migrateXmcSettings, parseGeckoPacketSize } from '@/lib/xray/forms/transport/FinalMaskForm';
+import {
+  defaultUdpMaskType,
+  migrateXmcSettings,
+  parseGeckoPacketSize,
+  udpMaskOptions,
+} from '@/lib/xray/forms/transport/FinalMaskForm';
 import { FinalMaskStreamSettingsSchema } from '@/schemas/protocols/stream';
 
 const fixtures = import.meta.glob<unknown>('./golden/fixtures/finalmask/*.json', {
@@ -94,5 +99,20 @@ describe('parseGeckoPacketSize', () => {
     // exceeds xray-core's gecko buffer (max 2048)
     expect(parseGeckoPacketSize('512-2049')).toBeNull();
     expect(parseGeckoPacketSize('512-9999')).toBeNull();
+  });
+});
+
+describe('mKCP UDP masks', () => {
+  const context = { isHysteria: false, isWireguard: false, network: 'kcp' };
+
+  it('defaults new mKCP masks to Salamander', () => {
+    expect(defaultUdpMaskType(context)).toBe('salamander');
+  });
+
+  it('offers modern Salamander and clearly marks the legacy mKCP mask', () => {
+    const options = udpMaskOptions(context);
+
+    expect(options).toContainEqual({ value: 'salamander', label: 'Salamander (Modern)' });
+    expect(options).toContainEqual({ value: 'mkcp-legacy', label: 'mKCP Legacy (Legacy)' });
   });
 });

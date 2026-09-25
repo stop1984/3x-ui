@@ -270,7 +270,8 @@ export function genVmessLink(input: GenVmessLinkInput): string {
   } else if (stream.network === 'xhttp') {
     const xhttp = stream.xhttpSettings;
     obj.path = xhttp.path;
-    obj.host = xhttp.host.length > 0 ? xhttp.host : xhttpHostFallback(xhttp);
+    const host = xhttp.host.length > 0 ? xhttp.host : xhttpHostFallback(xhttp);
+    if (host.length > 0) obj.host = host;
     obj.type = xhttp.mode;
     applyXhttpExtraToObj(xhttp, obj);
   }
@@ -309,7 +310,7 @@ function applyXhttpExtraToParams(
   if (!xhttp) return;
   params.set('path', xhttp.path);
   const host = xhttp.host.length > 0 ? xhttp.host : xhttpHostFallback(xhttp);
-  params.set('host', host);
+  if (host.length > 0) params.set('host', host);
   params.set('mode', xhttp.mode);
   if (typeof xhttp.xPaddingBytes === 'string' && xhttp.xPaddingBytes.length > 0) {
     params.set('x_padding_bytes', xhttp.xPaddingBytes);

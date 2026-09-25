@@ -904,7 +904,7 @@ exports[`protocol capability predicates > shadowsocks-2022 :: kcp/none 1`] = `
 {
   "canEnableReality": false,
   "canEnableStream": true,
-  "canEnableTls": false,
+  "canEnableTls": true,
   "canEnableTlsFlow": false,
   "canEnableVisionSeed": false,
   "isSS2022": true,
@@ -1072,7 +1072,7 @@ exports[`protocol capability predicates > trojan-basic :: kcp/none 1`] = `
 {
   "canEnableReality": false,
   "canEnableStream": true,
-  "canEnableTls": false,
+  "canEnableTls": true,
   "canEnableTlsFlow": false,
   "canEnableVisionSeed": false,
   "isSS2022": false,
@@ -1408,7 +1408,7 @@ exports[`protocol capability predicates > vless-tcp-none :: kcp/none 1`] = `
 {
   "canEnableReality": false,
   "canEnableStream": true,
-  "canEnableTls": false,
+  "canEnableTls": true,
   "canEnableTlsFlow": false,
   "canEnableVisionSeed": false,
   "isSS2022": false,
@@ -1576,7 +1576,7 @@ exports[`protocol capability predicates > vmess-basic :: kcp/none 1`] = `
 {
   "canEnableReality": false,
   "canEnableStream": true,
-  "canEnableTls": false,
+  "canEnableTls": true,
   "canEnableTlsFlow": false,
   "canEnableVisionSeed": false,
   "isSS2022": false,

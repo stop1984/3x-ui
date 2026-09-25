@@ -716,6 +716,9 @@ func (s *SubJsonService) streamData(stream string, clientKey string) map[string]
 	case "xhttp":
 		streamSettings["xhttpSettings"] = s.removeAcceptProxy(streamSettings["xhttpSettings"])
 		if xhttp, ok := streamSettings["xhttpSettings"].(map[string]any); ok {
+			if host, ok := xhttp["host"].(string); ok && host == "" {
+				delete(xhttp, "host")
+			}
 			delete(xhttp, "noSSEHeader")
 			delete(xhttp, "scMaxBufferedPosts")
 			delete(xhttp, "scStreamUpServerSecs")

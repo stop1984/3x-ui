@@ -235,6 +235,44 @@ function defaultUdpHop(): Record<string, unknown> {
   return { ports: '20000-50000', interval: '5-10' };
 }
 
+export function defaultUdpMaskType({
+  isHysteria,
+  isWireguard,
+  network,
+}: {
+  isHysteria: boolean;
+  isWireguard: boolean;
+  network: string;
+}): string {
+  return isHysteria || isWireguard || network === 'kcp' ? 'salamander' : 'mkcp-legacy';
+}
+
+export function udpMaskOptions({
+  isHysteria,
+  isWireguard,
+  network,
+}: {
+  isHysteria: boolean;
+  isWireguard: boolean;
+  network: string;
+}): Array<{ value: string; label: string }> {
+  if (isHysteria) {
+    return [{ value: 'salamander', label: 'Salamander (Modern, Hysteria2)' }];
+  }
+
+  return [
+    ...(isWireguard || network === 'kcp'
+      ? [{ value: 'salamander', label: 'Salamander (Modern)' }]
+      : []),
+    { value: 'mkcp-legacy', label: 'mKCP Legacy (Legacy)' },
+    { value: 'xdns', label: 'xDNS (Modern)' },
+    { value: 'xicmp', label: 'xICMP (Modern)' },
+    { value: 'realm', label: 'Realm (Modern)' },
+    { value: 'header-custom', label: 'Header Custom (Advanced)' },
+    { value: 'noise', label: 'Noise (Advanced)' },
+  ];
+}
+
 export default function FinalMaskForm({
   name,
   network,
@@ -832,7 +870,7 @@ function UdpMasksList({
               icon={<PlusOutlined />}
               aria-label={t('add')}
               onClick={() => {
-                const def = isHysteria || isWireguard ? 'salamander' : 'mkcp-legacy';
+                const def = defaultUdpMaskType({ isHysteria, isWireguard, network });
                 add({ type: def, settings: defaultUdpMaskSettings(def) });
               }}
             />
@@ -886,19 +924,7 @@ function UdpMaskItem({
     }
   };
 
-  const options = isHysteria
-    ? [{ value: 'salamander', label: 'Salamander (Hysteria2)' }]
-    : [
-        // Salamander is the mask xray-core's own wireguard finalmask example
-        // uses; it stays hysteria-only elsewhere to keep legacy parity.
-        ...(isWireguard ? [{ value: 'salamander', label: 'Salamander' }] : []),
-        { value: 'mkcp-legacy', label: 'mKCP Legacy' },
-        { value: 'xdns', label: 'xDNS' },
-        { value: 'xicmp', label: 'xICMP' },
-        { value: 'realm', label: 'Realm' },
-        { value: 'header-custom', label: 'Header Custom' },
-        { value: 'noise', label: 'Noise' },
-      ];
+  const options = udpMaskOptions({ isHysteria, isWireguard, network });
 
   return (
     <div>

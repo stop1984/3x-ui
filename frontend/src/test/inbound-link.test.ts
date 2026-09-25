@@ -80,6 +80,47 @@ describe('genVmessLink', () => {
       expect(link).toMatchSnapshot();
     });
   }
+
+  it('omits an empty XHTTP host from the VMess payload', () => {
+    const [, raw] = fixtures[0];
+    const source = raw as {
+      settings: { clients: Array<{ id: string; security?: string }> };
+      streamSettings: { tlsSettings: unknown };
+    };
+    const client = source.settings.clients[0];
+    const typed = InboundSchema.parse({
+      ...source,
+      streamSettings: {
+        network: 'xhttp',
+        xhttpSettings: {
+          path: '/direct',
+          host: '',
+          mode: 'stream-one',
+        },
+        security: 'tls',
+        tlsSettings: source.streamSettings.tlsSettings,
+      },
+    });
+
+    const link = genVmessLink({
+      inbound: typed,
+      address: 'example.test',
+      port: typed.port,
+      forceTls: 'same',
+      remark: 'empty-host',
+      clientId: client.id,
+      security: client.security as never,
+      externalProxy: null,
+    });
+    const payload = JSON.parse(window.atob(link.slice('vmess://'.length))) as Record<
+      string,
+      unknown
+    >;
+
+    expect(payload).not.toHaveProperty('host');
+    expect(payload.path).toBe('/direct');
+    expect(payload.type).toBe('stream-one');
+  });
 });
 
 describe('genVlessLink', () => {
@@ -106,6 +147,44 @@ describe('genVlessLink', () => {
       expect(link).toMatchSnapshot();
     });
   }
+
+  it('omits an empty XHTTP host from direct REALITY links', () => {
+    const [, raw] = fixtures.find(([name]) => name === 'vless-tcp-reality')!;
+    const source = raw as {
+      settings: { clients: Array<{ id: string; flow?: string }> };
+      streamSettings: { realitySettings: unknown };
+    };
+    const client = source.settings.clients[0];
+    const typed = InboundSchema.parse({
+      ...source,
+      streamSettings: {
+        network: 'xhttp',
+        xhttpSettings: {
+          path: '/direct-reality',
+          host: '',
+          mode: 'stream-one',
+        },
+        security: 'reality',
+        realitySettings: source.streamSettings.realitySettings,
+      },
+    });
+
+    const link = genVlessLink({
+      inbound: typed,
+      address: 'example.test',
+      port: typed.port,
+      forceTls: 'same',
+      remark: 'empty-host',
+      clientId: client.id,
+      flow: client.flow as never,
+      externalProxy: null,
+    });
+    const params = new URL(link).searchParams;
+
+    expect(params.has('host')).toBe(false);
+    expect(params.get('path')).toBe('/direct-reality');
+    expect(params.get('mode')).toBe('stream-one');
+  });
 });
 
 describe('applyVlessRoute', () => {

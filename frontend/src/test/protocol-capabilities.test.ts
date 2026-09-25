@@ -74,3 +74,25 @@ describe('protocol capability predicates', () => {
     }
   }
 });
+
+describe('mKCP TLS capability', () => {
+  it('allows TLS on kcp for stream-capable TLS protocols', () => {
+    for (const protocol of ['vless', 'vmess', 'trojan', 'shadowsocks']) {
+      expect(
+        canEnableTls({
+          protocol,
+          streamSettings: { network: 'kcp', security: 'tls' },
+        }),
+      ).toBe(true);
+    }
+  });
+
+  it('does not expose TLS for a non-stream protocol on kcp', () => {
+    expect(
+      canEnableTls({
+        protocol: 'http',
+        streamSettings: { network: 'kcp', security: 'tls' },
+      }),
+    ).toBe(false);
+  });
+});
