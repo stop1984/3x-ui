@@ -6,9 +6,14 @@ import (
 )
 
 func TestGetPanelVersion(t *testing.T) {
-	orig := buildCommit
-	t.Cleanup(func() { buildCommit = orig })
+	origCommit := buildCommit
+	origVersion := buildVersion
+	t.Cleanup(func() {
+		buildCommit = origCommit
+		buildVersion = origVersion
+	})
 
+	buildVersion = ""
 	buildCommit = ""
 	if got := GetPanelVersion(); got != GetBaseVersion() {
 		t.Fatalf("stable build: GetPanelVersion = %q, want %q", got, GetBaseVersion())
@@ -22,6 +27,16 @@ func TestGetPanelVersion(t *testing.T) {
 	buildCommit = "1d1128cf945c4615efa05cf41ba7fa766e2ee428"
 	if got := GetPanelVersion(); got != "dev+1d1128cf" {
 		t.Fatalf("dev build (full sha): GetPanelVersion = %q, want %q", got, "dev+1d1128cf")
+	}
+}
+
+func TestGetBaseVersionUsesStampedForkRelease(t *testing.T) {
+	orig := buildVersion
+	t.Cleanup(func() { buildVersion = orig })
+
+	buildVersion = "3.8.5-stop1984.1"
+	if got := GetBaseVersion(); got != buildVersion {
+		t.Fatalf("GetBaseVersion() = %q, want stamped version %q", got, buildVersion)
 	}
 }
 

@@ -40,10 +40,12 @@ type PanelUpdateInfo struct {
 }
 
 const (
-	panelUpdaterURL      = "https://raw.githubusercontent.com/MHSanaei/3x-ui/main/update.sh"
-	maxPanelUpdaterBytes = 2 << 20
+	panelRepository       = "stop1984/3x-ui"
+	panelRepositoryBranch = "HEAD"
+	panelUpdaterURL       = "https://raw.githubusercontent.com/" + panelRepository + "/" + panelRepositoryBranch + "/update.sh"
+	maxPanelUpdaterBytes  = 2 << 20
 	// devReleaseTag is the fixed-tag rolling pre-release the CI force-moves to the
-	// newest main commit; the dev update channel installs from it.
+	// newest default-branch commit; the dev update channel installs from it.
 	devReleaseTag = "dev-latest"
 
 	updateStatePending = "pending"
@@ -67,6 +69,7 @@ type PanelUpdateStatus struct {
 }
 
 var releaseCommitRegex = regexp.MustCompile(`(?i)commit=([0-9a-f]{7,40})`)
+var panelVersionRegex = regexp.MustCompile(`^v?(\d+)\.(\d+)\.(\d+)(?:-stop1984\.(\d+))?$`)
 
 // updateMu guards updateRunning/updateStarted/updateRunID/updatePID, which
 // stop a second self-update from launching while one is still in flight (two
@@ -430,9 +433,9 @@ func fetchLatestPanelVersion() (string, error) {
 // fetchPanelRelease fetches a release from GitHub. An empty tag resolves the
 // latest stable release; a non-empty tag (e.g. dev-latest) resolves that tag.
 func fetchPanelRelease(tag string) (*service.Release, error) {
-	url := "https://api.github.com/repos/MHSanaei/3x-ui/releases/latest"
+	url := "https://api.github.com/repos/" + panelRepository + "/releases/latest"
 	if tag != "" {
-		url = "https://api.github.com/repos/MHSanaei/3x-ui/releases/tags/" + tag
+		url = "https://api.github.com/repos/" + panelRepository + "/releases/tags/" + tag
 	}
 	client := (&service.SettingService{}).NewProxiedHTTPClient(10 * time.Second)
 	req, reqErr := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
@@ -546,13 +549,16 @@ func compareVersionStrings(a string, b string) (int, bool) {
 	return 0, true
 }
 
-func parseVersionParts(version string) ([3]int, bool) {
-	var result [3]int
-	parts := strings.Split(normalizeVersionTag(version), ".")
-	if len(parts) != 3 {
+func parseVersionParts(version string) ([4]int, bool) {
+	var result [4]int
+	parts := panelVersionRegex.FindStringSubmatch(strings.TrimSpace(version))
+	if parts == nil {
 		return result, false
 	}
-	for i, part := range parts {
+	for i, part := range parts[1:] {
+		if part == "" {
+			continue
+		}
 		n, err := strconv.Atoi(part)
 		if err != nil {
 			return result, false

@@ -24,6 +24,10 @@ func TestIsNewerVersion(t *testing.T) {
 		{"v2.9.3", "2.9.3", false},
 		{"v2.9.2", "2.9.3", false},
 		{"v3.0.0", "2.9.3", true},
+		{"v3.8.5-stop1984.1", "3.8.5", true},
+		{"v3.8.5-stop1984.2", "3.8.5-stop1984.1", true},
+		{"v3.8.5-stop1984.1", "3.8.5-stop1984.1", false},
+		{"v3.8.6-stop1984.1", "3.8.5-stop1984.99", true},
 	}
 
 	for _, tc := range cases {
@@ -39,6 +43,18 @@ func TestCompareVersionStringsRejectsUnexpectedFormats(t *testing.T) {
 	}
 	if _, ok := compareVersionStrings("v2.9", "2.9.3"); ok {
 		t.Fatal("expected short version to be rejected")
+	}
+	if _, ok := compareVersionStrings("v3.8.5-other.1", "3.8.5"); ok {
+		t.Fatal("expected a foreign version suffix to be rejected")
+	}
+}
+
+func TestForkUpdateSource(t *testing.T) {
+	if panelRepository != "stop1984/3x-ui" {
+		t.Fatalf("panelRepository = %q", panelRepository)
+	}
+	if panelUpdaterURL != "https://raw.githubusercontent.com/stop1984/3x-ui/HEAD/update.sh" {
+		t.Fatalf("panelUpdaterURL = %q", panelUpdaterURL)
 	}
 }
 

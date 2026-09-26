@@ -8,14 +8,19 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/MHSanaei/3x-ui/releases"><img src="https://img.shields.io/github/v/release/mhsanaei/3x-ui" alt="Release"></a>
-  <a href="https://github.com/MHSanaei/3x-ui/actions"><img src="https://img.shields.io/github/actions/workflow/status/mhsanaei/3x-ui/release.yml.svg" alt="Build"></a>
+  <a href="https://github.com/stop1984/3x-ui/releases"><img src="https://img.shields.io/github/v/release/stop1984/3x-ui" alt="Release"></a>
+  <a href="https://github.com/stop1984/3x-ui/actions"><img src="https://img.shields.io/github/actions/workflow/status/stop1984/3x-ui/release.yml.svg" alt="Build"></a>
   <a href="#"><img src="https://img.shields.io/github/go-mod/go-version/mhsanaei/3x-ui.svg" alt="GO Version"></a>
-  <a href="https://github.com/MHSanaei/3x-ui/releases/latest"><img src="https://img.shields.io/github/downloads/mhsanaei/3x-ui/total.svg" alt="Downloads"></a>
+  <a href="https://github.com/stop1984/3x-ui/releases/latest"><img src="https://img.shields.io/github/downloads/stop1984/3x-ui/total.svg" alt="Downloads"></a>
   <a href="https://www.gnu.org/licenses/gpl-3.0.en.html"><img src="https://img.shields.io/badge/license-GPL%20V3-blue.svg?longCache=true" alt="License"></a>
   <a href="https://pkg.go.dev/github.com/mhsanaei/3x-ui/v3"><img src="https://pkg.go.dev/badge/github.com/mhsanaei/3x-ui/v3.svg" alt="Go Reference"></a>
   <a href="https://docs.sanaei.dev"><img src="https://img.shields.io/badge/docs-docs.sanaei.dev-22d3ee" alt="Documentation"></a>
 </p>
+
+> [!NOTE]
+> Это форк `stop1984/3x-ui`, основанный на апстриме `v3.8.5`. Отличия форка,
+> правила сборки и выпуска описаны в [FORK_HARDENING.md](FORK_HARDENING.md),
+> [FORK_RELEASE.md](FORK_RELEASE.md) и [CHANGELOG_FORK.md](CHANGELOG_FORK.md).
 
 **3X-UI** — продвинутая веб-панель управления с открытым исходным кодом для управления серверами [Xray-core](https://github.com/XTLS/Xray-core). Она предоставляет аккуратный многоязычный интерфейс для развёртывания, настройки и мониторинга широкого спектра протоколов прокси и VPN — от одного VPS до развёртываний с несколькими узлами.
 
@@ -74,19 +79,19 @@
 ## Быстрый старт
 
 ```bash
-bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh)
+bash <(curl -Ls https://raw.githubusercontent.com/stop1984/3x-ui/HEAD/install.sh)
 ```
 
-Чтобы установить конкретную версию, добавьте её тег (например, `v3.7.0`):
+Чтобы установить конкретную версию, добавьте её тег (например, `v3.8.5-stop1984.1`):
 
 ```bash
-bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh) v3.7.0
+bash <(curl -Ls https://raw.githubusercontent.com/stop1984/3x-ui/HEAD/install.sh) v3.8.5-stop1984.1
 ```
 
-Чтобы установить скользящую **dev**-сборку (новейший предварительный релиз по каждому коммиту из ветки `main`, а не стабильный релиз), передайте `dev-latest`:
+Чтобы установить скользящую **dev**-сборку (новейший предварительный релиз по каждому коммиту из default branch репозитория, а не стабильный релиз), передайте `dev-latest`:
 
 ```bash
-bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh) dev-latest
+bash <(curl -Ls https://raw.githubusercontent.com/stop1984/3x-ui/HEAD/install.sh) dev-latest
 ```
 
 Во время установки генерируются случайные имя пользователя, пароль и путь доступа. После установки выполните `x-ui`, чтобы открыть меню управления, где можно запускать/останавливать сервис, просматривать или сбрасывать учётные данные для входа, управлять SSL-сертификатами и многое другое.

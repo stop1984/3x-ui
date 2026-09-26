@@ -8,14 +8,20 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/MHSanaei/3x-ui/releases"><img src="https://img.shields.io/github/v/release/mhsanaei/3x-ui" alt="Release"></a>
-  <a href="https://github.com/MHSanaei/3x-ui/actions"><img src="https://img.shields.io/github/actions/workflow/status/mhsanaei/3x-ui/release.yml.svg" alt="Build"></a>
+  <a href="https://github.com/stop1984/3x-ui/releases"><img src="https://img.shields.io/github/v/release/stop1984/3x-ui" alt="Release"></a>
+  <a href="https://github.com/stop1984/3x-ui/actions"><img src="https://img.shields.io/github/actions/workflow/status/stop1984/3x-ui/release.yml.svg" alt="Build"></a>
   <a href="#"><img src="https://img.shields.io/github/go-mod/go-version/mhsanaei/3x-ui.svg" alt="GO Version"></a>
-  <a href="https://github.com/MHSanaei/3x-ui/releases/latest"><img src="https://img.shields.io/github/downloads/mhsanaei/3x-ui/total.svg" alt="Downloads"></a>
+  <a href="https://github.com/stop1984/3x-ui/releases/latest"><img src="https://img.shields.io/github/downloads/stop1984/3x-ui/total.svg" alt="Downloads"></a>
   <a href="https://www.gnu.org/licenses/gpl-3.0.en.html"><img src="https://img.shields.io/badge/license-GPL%20V3-blue.svg?longCache=true" alt="License"></a>
   <a href="https://pkg.go.dev/github.com/mhsanaei/3x-ui/v3"><img src="https://pkg.go.dev/badge/github.com/mhsanaei/3x-ui/v3.svg" alt="Go Reference"></a>
   <a href="https://docs.sanaei.dev"><img src="https://img.shields.io/badge/docs-docs.sanaei.dev-22d3ee" alt="Documentation"></a>
 </p>
+
+> [!NOTE]
+> Este repositorio es el fork `stop1984/3x-ui`, basado actualmente en upstream
+> `v3.8.5`. Los cambios y las instrucciones de publicación están documentados en
+> [FORK_HARDENING.md](FORK_HARDENING.md), [FORK_RELEASE.md](FORK_RELEASE.md) y
+> [CHANGELOG_FORK.md](CHANGELOG_FORK.md).
 
 **3X-UI** es un panel de control web avanzado y de código abierto para gestionar servidores [Xray-core](https://github.com/XTLS/Xray-core). Ofrece una interfaz limpia y multilingüe para desplegar, configurar y monitorear una amplia gama de protocolos de proxy y VPN — desde un único VPS hasta despliegues multinodo.
 
@@ -74,19 +80,19 @@ Construido como un fork mejorado del proyecto X-UI original, 3X-UI añade un sop
 ## Inicio Rápido
 
 ```bash
-bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh)
+bash <(curl -Ls https://raw.githubusercontent.com/stop1984/3x-ui/HEAD/install.sh)
 ```
 
-Para instalar una versión específica, añade su etiqueta (p. ej. `v3.7.0`):
+Para instalar una versión específica, añade su etiqueta (p. ej. `v3.8.5-stop1984.1`):
 
 ```bash
-bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh) v3.7.0
+bash <(curl -Ls https://raw.githubusercontent.com/stop1984/3x-ui/HEAD/install.sh) v3.8.5-stop1984.1
 ```
 
-Para instalar la versión **dev** continua (la última prelanzamiento por commit desde `main`, no una versión estable), pasa `dev-latest`:
+Para instalar la versión **dev** continua (la última prelanzamiento por commit desde la rama predeterminada del repositorio, no una versión estable), pasa `dev-latest`:
 
 ```bash
-bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh) dev-latest
+bash <(curl -Ls https://raw.githubusercontent.com/stop1984/3x-ui/HEAD/install.sh) dev-latest
 ```
 
 Durante la instalación se generan un nombre de usuario, una contraseña y una ruta de acceso aleatorios. Tras la instalación, ejecuta `x-ui` para abrir el menú de gestión, donde puedes iniciar/detener el servicio, ver o restablecer tus credenciales de acceso, gestionar certificados SSL y mucho más.

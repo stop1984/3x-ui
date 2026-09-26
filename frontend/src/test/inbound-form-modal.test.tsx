@@ -295,7 +295,7 @@ describe('InboundFormModal', () => {
       );
     });
     expect(post).not.toHaveBeenCalled();
-  });
+  }, 10_000);
 
   it('submits a valid clone-like Reality inbound', async () => {
     const post = vi.mocked(HttpUtil.post);

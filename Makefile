@@ -81,8 +81,12 @@ build: build-fe ## Build the frontend then the Go binary
 build-storybook: ## Build the static Storybook (compile-checks all stories)
 	cd $(FRONTEND) && npm run build-storybook
 
+.PHONY: fork-check
+fork-check: ## Verify fork release and self-update sources
+	bash scripts/fork-check.sh
+
 # The PR gate. Matches ci.yml: codegen freshness, both linters, the formatter,
 # typecheck, both test suites, a full build, and the Storybook compile-check.
 .PHONY: verify
-verify: gen-check lint format-check typecheck msw-worker-check test build build-storybook ## Full local gate (mirrors CI)
+verify: gen-check lint format-check typecheck msw-worker-check test build build-storybook fork-check ## Full local gate (mirrors CI)
 	@echo "verify: OK"

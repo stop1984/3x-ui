@@ -25,8 +25,9 @@ var name string
 // stay empty for a plain `go build` and for stable tagged releases, which is how
 // IsDevBuild tells a rolling dev build apart from a stable/local one.
 var (
-	buildCommit string
-	buildDate   string
+	buildCommit  string
+	buildDate    string
+	buildVersion string
 )
 
 // LogLevel represents the logging level for the application.
@@ -46,6 +47,9 @@ const (
 // version a panel advertises/displays (which adds a "dev+<sha>" label on dev
 // builds), use GetPanelVersion.
 func GetBaseVersion() string {
+	if value := strings.TrimSpace(buildVersion); value != "" {
+		return value
+	}
 	return strings.TrimSpace(version)
 }
 

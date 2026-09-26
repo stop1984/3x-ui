@@ -106,7 +106,9 @@ jobs:
           # Stamp the commit into per-commit (dev channel) builds only; tagged
           # stable releases stay unstamped so config.IsDevBuild() returns false.
           LDFLAGS="-w -s -linkmode external -extldflags '-static'"
-          if [[ "$GITHUB_REF" != refs/tags/* ]]; then
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            LDFLAGS="$LDFLAGS -X github.com/mhsanaei/3x-ui/v3/internal/config.buildVersion=${GITHUB_REF_NAME#v}"
+          else
             LDFLAGS="$LDFLAGS -X github.com/mhsanaei/3x-ui/v3/internal/config.buildCommit=${GITHUB_SHA::8} -X github.com/mhsanaei/3x-ui/v3/internal/config.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           fi
           go build -buildvcs=true -ldflags "$LDFLAGS" -o xui-release -v .
@@ -223,10 +225,16 @@ jobs:
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           tag: ${{ github.ref_name }}
+          release_name: 3X-UI Fork ${{ github.ref_name }}
+          body: |
+            stop1984/3x-ui fork release based on upstream 3X-UI.
+
+            See `CHANGELOG_FORK.md`, `FORK_HARDENING.md`, and `FORK_RELEASE.md`
+            in this tag for the exact delta, verification, and upgrade notes.
           file: x-ui-linux-${{ matrix.platform }}.tar.gz*
           file_glob: true
           overwrite: true
-          prerelease: true
+          prerelease: false
 
   # =================================
   #  Windows Build
@@ -294,7 +302,9 @@ jobs:
 
           # Stamp the commit into per-commit (dev channel) builds only.
           LDFLAGS="-w -s"
-          if [[ "$GITHUB_REF" != refs/tags/* ]]; then
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            LDFLAGS="$LDFLAGS -X github.com/mhsanaei/3x-ui/v3/internal/config.buildVersion=${GITHUB_REF_NAME#v}"
+          else
             LDFLAGS="$LDFLAGS -X github.com/mhsanaei/3x-ui/v3/internal/config.buildCommit=${GITHUB_SHA:0:8} -X github.com/mhsanaei/3x-ui/v3/internal/config.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           fi
           go build -buildvcs=true -ldflags "$LDFLAGS" -o xui-release.exe -v .
@@ -362,23 +372,29 @@ jobs:
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           tag: ${{ github.ref_name }}
+          release_name: 3X-UI Fork ${{ github.ref_name }}
+          body: |
+            stop1984/3x-ui fork release based on upstream 3X-UI.
+
+            See `CHANGELOG_FORK.md`, `FORK_HARDENING.md`, and `FORK_RELEASE.md`
+            in this tag for the exact delta, verification, and upgrade notes.
           file: x-ui-windows-amd64.zip*
           file_glob: true
           overwrite: true
-          prerelease: true
+          prerelease: false
 
   # =================================
   #  Rolling dev channel (per-commit)
   # =================================
   # Publishes/overwrites the build artifacts to a single fixed-tag pre-release
-  # `dev-latest`, force-moved to the new commit on every push to main. The panel's
+  # `dev-latest`, force-moved on every push to the repository's default branch. The panel's
   # "Dev" update channel installs from this tag. `--latest=false` is load-bearing:
   # it keeps releases/latest pointing at the real stable tag, so the stable
   # channel is unaffected.
   publish-dev:
     name: Publish rolling dev release
     needs: [build, build-windows]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref_name == github.event.repository.default_branch
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -417,7 +433,7 @@ jobs:
           commit=${COMMIT}
           built=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-          Automated per-commit build from main. Not a stable release."
+          Automated per-commit build from the default branch. Not a stable release."
 
           # Force-move the dev-latest tag to this commit so the release tracks it.
           git tag -f dev-latest "${COMMIT}"

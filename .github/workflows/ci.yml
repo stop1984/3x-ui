@@ -7,20 +7,24 @@ on:
       - "go.mod"
       - "go.sum"
       - "frontend/**"
+      - "**.sh"
       - ".nvmrc"
       - "Makefile"
       - ".github/workflows/ci.yml"
+      - ".github/workflows/release.yml"
   push:
     branches:
-      - main
+      - "**"
     paths:
       - "**.go"
       - "go.mod"
       - "go.sum"
       - "frontend/**"
+      - "**.sh"
       - ".nvmrc"
       - "Makefile"
       - ".github/workflows/ci.yml"
+      - ".github/workflows/release.yml"
 
 permissions:
   contents: read
@@ -36,6 +40,8 @@ jobs:
           cache: true
       - name: Stub internal/web/dist for go:embed
         run: mkdir -p internal/web/dist && touch internal/web/dist/.gitkeep
+      - name: Verify fork release sources
+        run: bash scripts/fork-check.sh
       - name: Test
         run: |
           go list ./... | grep -v '/frontend/node_modules/' > /tmp/go-packages.txt
