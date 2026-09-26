@@ -82,10 +82,10 @@
 bash <(curl -Ls https://raw.githubusercontent.com/stop1984/3x-ui/HEAD/install.sh)
 ```
 
-Чтобы установить конкретную версию, добавьте её тег (например, `v3.8.5-stop1984.1`):
+Чтобы установить конкретную версию, добавьте её тег (например, `v3.8.5-stop1984.2`):
 
 ```bash
-bash <(curl -Ls https://raw.githubusercontent.com/stop1984/3x-ui/HEAD/install.sh) v3.8.5-stop1984.1
+bash <(curl -Ls https://raw.githubusercontent.com/stop1984/3x-ui/HEAD/install.sh) v3.8.5-stop1984.2
 ```
 
 Чтобы установить скользящую **dev**-сборку (новейший предварительный релиз по каждому коммиту из default branch репозитория, а не стабильный релиз), передайте `dev-latest`:

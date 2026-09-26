@@ -83,10 +83,10 @@ Orijinal X-UI projesinin geliştirilmiş bir çatallaması (fork) olarak inşa e
 bash <(curl -Ls https://raw.githubusercontent.com/stop1984/3x-ui/HEAD/install.sh)
 ```
 
-Belirli bir sürümü kurmak için, etiketini (ör. `v3.8.5-stop1984.1`) ekleyin:
+Belirli bir sürümü kurmak için, etiketini (ör. `v3.8.5-stop1984.2`) ekleyin:
 
 ```bash
-bash <(curl -Ls https://raw.githubusercontent.com/stop1984/3x-ui/HEAD/install.sh) v3.8.5-stop1984.1
+bash <(curl -Ls https://raw.githubusercontent.com/stop1984/3x-ui/HEAD/install.sh) v3.8.5-stop1984.2
 ```
 
 Sürekli güncellenen **dev** sürümünü (kararlı bir sürüm değil; deponun varsayılan dalındaki her commit'ten oluşturulan en son ön sürüm) kurmak için `dev-latest` değerini geçirin:

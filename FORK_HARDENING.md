@@ -19,7 +19,7 @@ The fork intentionally carries a small behavioral delta:
    `stop1984/3x-ui`; a fork release cannot silently replace itself with an
    upstream build.
 5. Tagged builds report the complete fork version, for example
-   `3.8.5-stop1984.1`, so the update checker does not offer the same release in
+   `3.8.5-stop1984.2`, so the update checker does not offer the same release in
    a loop.
 
 ## Superseded Old Patches

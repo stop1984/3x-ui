@@ -52,7 +52,7 @@ v<upstream-major>.<upstream-minor>.<upstream-patch>-stop1984.<revision>
 Example:
 
 ```text
-v3.8.5-stop1984.1
+v3.8.5-stop1984.2
 ```
 
 The release workflow injects the tag into `internal/config.buildVersion`.
@@ -97,7 +97,7 @@ Prefer the tagged fork installer/updater so bundled sidecars remain in sync:
 
 ```bash
 bash <(curl -Ls https://raw.githubusercontent.com/stop1984/3x-ui/HEAD/install.sh) \
-  v3.8.5-stop1984.1
+  v3.8.5-stop1984.2
 ```
 
 After rollout, verify:

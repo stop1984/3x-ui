@@ -440,8 +440,8 @@ setup_ip_certificate() {
 
 # Comprehensive manual SSL certificate issuance via acme.sh
 ssl_cert_issue() {
-    local existing_webBasePath=$(${xui_folder}/x-ui setting -show true | grep 'webBasePath:' | awk -F': ' '{print $2}' | tr -d '[:space:]' | sed 's#^/##')
-    local existing_port=$(${xui_folder}/x-ui setting -show true | grep 'port:' | awk -F': ' '{print $2}' | tr -d '[:space:]')
+    local existing_webBasePath=$("${xui_folder}/x-ui" setting -show | grep 'webBasePath:' | awk -F': ' '{print $2}' | tr -d '[:space:]' | sed 's#^/##')
+    local existing_port=$("${xui_folder}/x-ui" setting -show | grep 'port:' | awk -F': ' '{print $2}' | tr -d '[:space:]')
 
     # check for acme.sh first
     if ! command -v ~/.acme.sh/acme.sh &> /dev/null; then
@@ -816,17 +816,23 @@ prompt_and_setup_ssl() {
     esac
 }
 
+run_database_migration() {
+    echo -e "${yellow}Migrating database before starting x-ui...${plain}"
+    if ! "${xui_folder}/x-ui" migrate; then
+        _fail "ERROR: Database migration failed; x-ui was left stopped to avoid starting with a partially migrated database"
+    fi
+}
+
 config_after_update() {
     local panel_needs_restart=0
 
     echo -e "${yellow}x-ui settings:${plain}"
-    ${xui_folder}/x-ui setting -show true
-    ${xui_folder}/x-ui migrate
+    "${xui_folder}/x-ui" setting -show
 
     # Properly detect empty cert by checking if cert: line exists and has content after it
-    local existing_cert=$(${xui_folder}/x-ui setting -getCert true 2> /dev/null | grep 'cert:' | awk -F': ' '{print $2}' | tr -d '[:space:]')
-    local existing_port=$(${xui_folder}/x-ui setting -show true | grep -Eo 'port: .+' | awk '{print $2}')
-    local existing_webBasePath=$(${xui_folder}/x-ui setting -show true | grep -Eo 'webBasePath: .+' | awk '{print $2}' | sed 's#^/##')
+    local existing_cert=$("${xui_folder}/x-ui" setting -getCert 2> /dev/null | grep 'cert:' | awk -F': ' '{print $2}' | tr -d '[:space:]')
+    local existing_port=$("${xui_folder}/x-ui" setting -show | grep -Eo 'port: .+' | awk '{print $2}')
+    local existing_webBasePath=$("${xui_folder}/x-ui" setting -show | grep -Eo 'webBasePath: .+' | awk '{print $2}' | sed 's#^/##')
 
     # Get server IP
     local URL_lists=(
@@ -1195,6 +1201,7 @@ update_x-ui() {
         chmod +x /etc/init.d/x-ui > /dev/null 2>&1
         chown root:root /etc/init.d/x-ui > /dev/null 2>&1
         rc-update add x-ui > /dev/null 2>&1
+        run_database_migration
         rc-service x-ui start > /dev/null 2>&1
     else
         if [ -f "x-ui.service" ]; then
@@ -1257,6 +1264,7 @@ update_x-ui() {
         chmod 644 ${xui_service}/x-ui.service > /dev/null 2>&1
         systemctl daemon-reload > /dev/null 2>&1
         systemctl enable x-ui > /dev/null 2>&1
+        run_database_migration
         systemctl start x-ui > /dev/null 2>&1
     fi
 

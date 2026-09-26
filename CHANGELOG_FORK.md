@@ -1,5 +1,17 @@
 # Fork Changelog
 
+## v3.8.5-stop1984.2 - 2026-09-26
+
+Base: upstream `v3.8.5` (`7ef22f94c950ff09f0870e2295fa65ad5968742c`).
+
+### Fixed
+
+- The updater now runs database migrations while the panel service is stopped,
+  preventing the service startup migration and the explicit migration command
+  from racing on the same schema change.
+- Update-time settings checks no longer pass stray positional values to boolean
+  CLI flags.
+
 ## v3.8.5-stop1984.1 - 2026-09-26
 
 Base: upstream `v3.8.5` (`7ef22f94c950ff09f0870e2295fa65ad5968742c`).

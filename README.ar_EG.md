@@ -83,10 +83,10 @@
 bash <(curl -Ls https://raw.githubusercontent.com/stop1984/3x-ui/HEAD/install.sh)
 ```
 
-لتثبيت إصدار محدد، أضِف وسمه (مثل `v3.8.5-stop1984.1`):
+لتثبيت إصدار محدد، أضِف وسمه (مثل `v3.8.5-stop1984.2`):
 
 ```bash
-bash <(curl -Ls https://raw.githubusercontent.com/stop1984/3x-ui/HEAD/install.sh) v3.8.5-stop1984.1
+bash <(curl -Ls https://raw.githubusercontent.com/stop1984/3x-ui/HEAD/install.sh) v3.8.5-stop1984.2
 ```
 
 لتثبيت بنية **dev** المتجددة (أحدث إصدار أولي لكل التزام من الفرع الافتراضي للمستودع، وليس إصدارًا مستقرًا)، مرّر `dev-latest`:

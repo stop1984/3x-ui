@@ -33,4 +33,13 @@ bash -n install.sh
 bash -n update.sh
 bash -n x-ui.sh
 
+if [[ $(grep -Ec '^[[:space:]]*run_database_migration$' update.sh) -ne 2 ]]; then
+  printf 'update.sh must migrate once before each supported service start path\n' >&2
+  exit 1
+fi
+if grep -Eq 'setting -(show|getCert) true' update.sh; then
+  printf 'update.sh passes a positional value to a boolean setting flag\n' >&2
+  exit 1
+fi
+
 printf 'fork release source checks: OK\n'

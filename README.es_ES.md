@@ -83,10 +83,10 @@ Construido como un fork mejorado del proyecto X-UI original, 3X-UI añade un sop
 bash <(curl -Ls https://raw.githubusercontent.com/stop1984/3x-ui/HEAD/install.sh)
 ```
 
-Para instalar una versión específica, añade su etiqueta (p. ej. `v3.8.5-stop1984.1`):
+Para instalar una versión específica, añade su etiqueta (p. ej. `v3.8.5-stop1984.2`):
 
 ```bash
-bash <(curl -Ls https://raw.githubusercontent.com/stop1984/3x-ui/HEAD/install.sh) v3.8.5-stop1984.1
+bash <(curl -Ls https://raw.githubusercontent.com/stop1984/3x-ui/HEAD/install.sh) v3.8.5-stop1984.2
 ```
 
 Para instalar la versión **dev** continua (la última prelanzamiento por commit desde la rama predeterminada del repositorio, no una versión estable), pasa `dev-latest`:

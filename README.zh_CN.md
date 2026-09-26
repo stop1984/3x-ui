@@ -82,10 +82,10 @@
 bash <(curl -Ls https://raw.githubusercontent.com/stop1984/3x-ui/HEAD/install.sh)
 ```
 
-若要安装特定版本，请在命令后附加对应的标签（例如 `v3.8.5-stop1984.1`）：
+若要安装特定版本，请在命令后附加对应的标签（例如 `v3.8.5-stop1984.2`）：
 
 ```bash
-bash <(curl -Ls https://raw.githubusercontent.com/stop1984/3x-ui/HEAD/install.sh) v3.8.5-stop1984.1
+bash <(curl -Ls https://raw.githubusercontent.com/stop1984/3x-ui/HEAD/install.sh) v3.8.5-stop1984.2
 ```
 
 若要安装滚动更新的 **dev** 版本（来自仓库默认分支的最新逐次提交预发布版本，而非稳定版本），请传入 `dev-latest`：
