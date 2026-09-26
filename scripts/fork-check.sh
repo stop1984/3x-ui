@@ -23,6 +23,11 @@ grep -q 'XUI_REPO_BRANCH:-HEAD' update.sh
 grep -q 'XUI_REPO_BRANCH:-HEAD' x-ui.sh
 grep -q 'panelRepositoryBranch = "HEAD"' internal/web/service/panel/panel.go
 grep -q 'internal/config.buildVersion' .github/workflows/release.yml
+grep -q 'ghcr.io/stop1984/3x-ui' .github/workflows/docker.yml
+if grep -Eqi 'hsanaeii/3x-ui|ghcr\.io/mhsanaei/3x-ui' .github/workflows/docker.yml; then
+  printf 'upstream container target leaked into .github/workflows/docker.yml\n' >&2
+  exit 1
+fi
 
 bash -n install.sh
 bash -n update.sh

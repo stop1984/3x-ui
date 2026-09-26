@@ -76,6 +76,11 @@ development builds keep upstream's `dev+<commit>` behavior.
 The workflow packages the panel, Xray-core, geodata, MTProto sidecar, and TUIC
 sidecar. A locally built bare `x-ui` binary is not a complete release archive.
 
+Container publishing is intentionally separate and manual. The
+`Build 3X-UI Fork Container` workflow publishes only to
+`ghcr.io/stop1984/3x-ui`; stable binary tags do not attempt to use upstream's
+Docker Hub or GHCR namespaces.
+
 ## Rollout
 
 Before changing a live installation:

@@ -50,6 +50,7 @@ implementation unless a current regression test demonstrates a missing case.
 - FinalMask payloads use the current Xray-core schema. Legacy masks are retained
   only for compatibility and are labeled as such.
 - Release archives and their SHA-256 sidecars are produced by the tagged commit.
+- Container builds never publish to upstream Docker Hub or GHCR namespaces.
 - The production binary is not replaced until tests, backup, and smoke checks
   have completed.
 

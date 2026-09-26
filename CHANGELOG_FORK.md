@@ -11,6 +11,7 @@ Base: upstream `v3.8.5` (`7ef22f94c950ff09f0870e2295fa65ad5968742c`).
 - Explicit modern, legacy, and advanced labels in the UDP mask selector.
 - Fork-aware installer, updater, menu, panel update checker, and tagged build
   version stamping.
+- A manual container workflow scoped to `ghcr.io/stop1984/3x-ui`.
 
 ### Fixed
 
@@ -19,6 +20,8 @@ Base: upstream `v3.8.5` (`7ef22f94c950ff09f0870e2295fa65ad5968742c`).
 - Fork releases no longer update themselves from `MHSanaei/3x-ui`.
 - Fork release revisions compare correctly and do not trigger an endless
   same-version update prompt.
+- The fork container workflow no longer targets upstream Docker Hub or GHCR
+  namespaces.
 
 ### Upstream Integration
 
