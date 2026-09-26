@@ -68,8 +68,10 @@ type PanelUpdateStatus struct {
 	FinishedAt int64  `json:"finishedAt" example:"1735689612"`
 }
 
-var releaseCommitRegex = regexp.MustCompile(`(?i)commit=([0-9a-f]{7,40})`)
-var panelVersionRegex = regexp.MustCompile(`^v?(\d+)\.(\d+)\.(\d+)(?:-stop1984\.(\d+))?$`)
+var (
+	releaseCommitRegex = regexp.MustCompile(`(?i)commit=([0-9a-f]{7,40})`)
+	panelVersionRegex  = regexp.MustCompile(`^v?(\d+)\.(\d+)\.(\d+)(?:-stop1984\.(\d+))?$`)
+)
 
 // updateMu guards updateRunning/updateStarted/updateRunID/updatePID, which
 // stop a second self-update from launching while one is still in flight (two
