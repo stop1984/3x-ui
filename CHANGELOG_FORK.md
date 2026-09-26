@@ -1,6 +1,6 @@
 # Fork Changelog
 
-## v3.8.5-stop1984.1 - Unreleased
+## v3.8.5-stop1984.1 - 2026-09-26
 
 Base: upstream `v3.8.5` (`7ef22f94c950ff09f0870e2295fa65ad5968742c`).
 
