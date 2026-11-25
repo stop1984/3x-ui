@@ -63,11 +63,12 @@ development builds keep upstream's `dev+<commit>` behavior.
 
 1. Confirm the branch is based on the intended upstream tag.
 2. Confirm `git status` contains no generated or accidental files.
-3. Run the full verification gate.
+3. Run the local checks before pushing. Complete the full verification gate
+   in Actions on the release tag before publishing.
 4. Push the reviewed branch to `stop1984/3x-ui`. Installer and updater entry
    points resolve through the repository's default branch (`HEAD`).
 5. Create and push the signed or annotated fork tag.
-6. Wait for all eight build jobs and the stable draft job. Verify the packaged
+6. Wait for CI, all eight build jobs and the stable draft job. Verify the packaged
    `amd64` binary reports the fork version. For a database upgrade, rehearse
    the migration and smoke test with an isolated SQLite snapshot.
 7. Make the reviewed branch the default and publish the complete draft as the
