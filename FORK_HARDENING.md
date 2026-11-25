@@ -1,8 +1,8 @@
 # stop1984 3X-UI Fork
 
-This branch is rebuilt from upstream `v3.8.5` rather than merging the old
-`v3.3.0` fork history. The clean-base approach keeps upstream migrations,
-security fixes, and the current normalized client model intact.
+The current integration merges upstream `v3.11.0` into the `v3.8.5-stop1984.2`
+fork. The previous fork was rebuilt from upstream `v3.8.5` and had already
+retired the superseded backend patches from the `v3.3.0` series.
 
 ## Current Delta
 
@@ -19,8 +19,10 @@ The fork intentionally carries a small behavioral delta:
    `stop1984/3x-ui`; a fork release cannot silently replace itself with an
    upstream build.
 5. Tagged builds report the complete fork version, for example
-   `3.8.5-stop1984.2`, so the update checker does not offer the same release in
-   a loop.
+   `3.11.0-stop1984.1`. The shared version comparator compares the upstream
+   version first, then the fork revision.
+6. The updater checks the offline migration before starting the panel and
+   reports migration and start failures through the update status file.
 
 ## Superseded Old Patches
 
@@ -86,7 +88,8 @@ declared in `.nvmrc`.
 
 For each upstream release:
 
-1. Create a new branch from the stable upstream tag.
+1. Create an integration branch for the stable upstream tag and retain the
+   prior fork tag as a rollback reference.
 2. Audit whether upstream now implements each item in **Current Delta**.
 3. Drop superseded fork code rather than preserving patch history mechanically.
 4. Port remaining behavior with focused tests.

@@ -10,7 +10,9 @@ import { z } from 'zod';
 // here would dwarf the rest of the stream module without buying anything
 // the safety net doesn't already cover.
 
-export const TcpMaskTypeSchema = z.enum(['fragment', 'sudoku', 'header-custom', 'xmc']);
+// 'filter' (xray-core 26.10.21) screens a listener's source IPs, so only the server-side
+// editors offer it and the share-link generators drop it.
+export const TcpMaskTypeSchema = z.enum(['fragment', 'sudoku', 'header-custom', 'xmc', 'filter']);
 export type TcpMaskType = z.infer<typeof TcpMaskTypeSchema>;
 
 export const TcpMaskSchema = z.object({
@@ -20,7 +22,7 @@ export const TcpMaskSchema = z.object({
 export type TcpMask = z.infer<typeof TcpMaskSchema>;
 
 // 'udphop' is client-only in xray-core (it refuses to wrap a server socket),
-// so it round-trips here but is deliberately absent from the mask dropdown.
+// so only the client-side mask editors offer it.
 export const UdpMaskTypeSchema = z.enum([
   'salamander',
   'mkcp-legacy',
@@ -31,6 +33,7 @@ export const UdpMaskTypeSchema = z.enum([
   'sudoku',
   'realm',
   'udphop',
+  'filter',
 ]);
 export type UdpMaskType = z.infer<typeof UdpMaskTypeSchema>;
 

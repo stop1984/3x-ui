@@ -28,24 +28,14 @@ func TestIsNewerVersion(t *testing.T) {
 		{"v3.8.5-stop1984.2", "3.8.5-stop1984.1", true},
 		{"v3.8.5-stop1984.1", "3.8.5-stop1984.1", false},
 		{"v3.8.6-stop1984.1", "3.8.5-stop1984.99", true},
+		{"v3.11.0-stop1984.1", "3.8.5-stop1984.2", true},
+		{"v3.8.5-stop1984.2", "3.11.0-stop1984.1", false},
 	}
 
 	for _, tc := range cases {
 		if got := isNewerVersion(tc.latest, tc.current); got != tc.want {
 			t.Fatalf("isNewerVersion(%q, %q) = %v, want %v", tc.latest, tc.current, got, tc.want)
 		}
-	}
-}
-
-func TestCompareVersionStringsRejectsUnexpectedFormats(t *testing.T) {
-	if _, ok := compareVersionStrings("latest", "2.9.3"); ok {
-		t.Fatal("expected non-semver latest tag to be rejected")
-	}
-	if _, ok := compareVersionStrings("v2.9", "2.9.3"); ok {
-		t.Fatal("expected short version to be rejected")
-	}
-	if _, ok := compareVersionStrings("v3.8.5-other.1", "3.8.5"); ok {
-		t.Fatal("expected a foreign version suffix to be rejected")
 	}
 }
 
@@ -70,6 +60,9 @@ func TestShellQuote(t *testing.T) {
 // TestUpdateProxyEnvVars covers the bug this function fixes: ambient proxy
 // vars must reach update.sh's systemd-run child, which inherits nothing.
 func TestUpdateProxyEnvVars(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows env var names are case-insensitive, so both spellings resolve; the updater runs only on Linux")
+	}
 	allKeys := []string{"https_proxy", "HTTPS_PROXY", "all_proxy", "ALL_PROXY", "http_proxy", "HTTP_PROXY", "no_proxy", "NO_PROXY"}
 	clearAll := func(t *testing.T) {
 		t.Helper()

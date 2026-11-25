@@ -6,7 +6,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/mhsanaei/3x-ui/v3/internal/amneziawgkern"
 	"github.com/mhsanaei/3x-ui/v3/internal/database/model"
+	"github.com/mhsanaei/3x-ui/v3/internal/util/wirecodec"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/middleware"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/session"
@@ -63,8 +65,11 @@ func (a *InboundController) broadcastInboundsUpdate(userId int) {
 // node-sync push, so the node stores the row instead of re-judging it.
 func (a *InboundController) inboundServiceFor(c *gin.Context) *service.InboundService {
 	svc := a.inboundService
-	scope, _ := c.Get("api_token_scope")
-	svc.FromNodeSync = scope == model.ApiScopeNodeSync
+	scopeValue, _ := c.Get("api_token_scope")
+	scope, _ := scopeValue.(string)
+	// A master enrolled with an admin token (the -getApiToken default) has no
+	// node-sync scope, so it marks every request it sends instead.
+	svc.FromNodeSync = model.IsNodeSyncApiScope(scope) || c.GetHeader(wirecodec.MasterPushHeader) != ""
 	return &svc
 }
 
@@ -76,6 +81,7 @@ func (a *InboundController) initRouter(g *gin.RouterGroup) {
 	g.GET("/allLinks", a.getAllInboundLinks)
 	g.GET("/get/:id", a.getInbound)
 	g.GET("/:id/fallbacks", a.getFallbacks)
+	g.GET("/amneziawgKernelReadiness", a.getAmneziaWGKernelReadiness)
 
 	g.POST("/add", a.addInbound)
 	g.POST("/del/:id", a.delInbound)
@@ -138,6 +144,12 @@ func (a *InboundController) getInboundOptions(c *gin.Context) {
 		return
 	}
 	jsonObj(c, options, nil)
+}
+
+// getAmneziaWGKernelReadiness reports whether this host can run an AmneziaWG
+// inbound on the kernel module, so the form can disable the toggle and say why.
+func (a *InboundController) getAmneziaWGKernelReadiness(c *gin.Context) {
+	jsonObj(c, amneziawgkern.HostReadiness(), nil)
 }
 
 // getInbound retrieves a specific inbound by its ID.
@@ -442,11 +454,8 @@ func (a *InboundController) importInbound(c *gin.Context) {
 	notifyClientsChanged()
 }
 
-// resolveHost mirrors what sub.SubService.ResolveRequest does for the host
-// field: prefers X-Forwarded-Host (first entry of any list, port stripped),
-// then X-Real-IP, then the host portion of c.Request.Host. Keeping it in the
-// controller layer means the service interface stays HTTP-agnostic — service
-// methods receive a plain host string instead of a *gin.Context.
+// resolveHost mirrors SubService.ResolveRequest's host: trusted X-Forwarded-Host,
+// else the dialed request Host. X-Real-IP names the visitor, not the panel (#6589).
 func resolveHost(c *gin.Context) string {
 	if isTrustedForwardedRequest(c) {
 		if h := strings.TrimSpace(c.GetHeader("X-Forwarded-Host")); h != "" {
@@ -456,9 +465,6 @@ func resolveHost(c *gin.Context) string {
 			if hp, _, err := net.SplitHostPort(h); err == nil {
 				return hp
 			}
-			return h
-		}
-		if h := c.GetHeader("X-Real-IP"); h != "" {
 			return h
 		}
 	}

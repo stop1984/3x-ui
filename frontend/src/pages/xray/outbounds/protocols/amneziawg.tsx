@@ -39,7 +39,7 @@ export default function AmneziawgFields() {
           />
         </FormField>
         <Button
-          icon={<ReloadOutlined />}
+          icon={<ReloadOutlined aria-hidden />}
           aria-label={t('regenerate')}
           onClick={() => {
             const pair = Wireguard.generateKeypair();
@@ -70,15 +70,19 @@ export default function AmneziawgFields() {
       <ObfNumber name="jc" label={t('pages.xray.amneziawg.jc')} min={0} />
       <ObfNumber name="jmin" label={t('pages.xray.amneziawg.jmin')} min={0} />
       <ObfNumber name="jmax" label={t('pages.xray.amneziawg.jmax')} min={0} />
-      <ObfNumber name="s1" label={t('pages.xray.amneziawg.s1')} min={0} />
-      <ObfNumber name="s2" label={t('pages.xray.amneziawg.s2')} min={0} />
-      <ObfNumber name="s3" label={t('pages.xray.amneziawg.s3')} min={0} max={64} />
+      <ObfNumber name="s1" label={t('pages.xray.amneziawg.s1')} min={0} max={65535} />
+      <ObfNumber name="s2" label={t('pages.xray.amneziawg.s2')} min={0} max={65535} />
+      <ObfNumber name="s3" label={t('pages.xray.amneziawg.s3')} min={0} max={65535} />
       <ObfNumber name="s4" label={t('pages.xray.amneziawg.s4')} min={0} max={32} />
       <ObfText name="h1" label={t('pages.xray.amneziawg.h1')} placeholder="100-800" />
       <ObfText name="h2" label={t('pages.xray.amneziawg.h2')} placeholder="900-1600" />
       <ObfText name="h3" label={t('pages.xray.amneziawg.h3')} placeholder="1700-2400" />
       <ObfText name="h4" label={t('pages.xray.amneziawg.h4')} placeholder="2500-3200" />
       <ObfText name="i1" label={t('pages.xray.amneziawg.i1')} placeholder="<r 64>" />
+      <ObfText name="i2" label={t('pages.xray.amneziawg.i2')} placeholder="<r 64>" />
+      <ObfText name="i3" label={t('pages.xray.amneziawg.i3')} placeholder="<r 64>" />
+      <ObfText name="i4" label={t('pages.xray.amneziawg.i4')} placeholder="<r 64>" />
+      <ObfText name="i5" label={t('pages.xray.amneziawg.i5')} placeholder="<r 64>" />
       <ObfText
         name="contentPaddingAddition"
         label={t('pages.xray.amneziawg.contentPaddingAddition')}
@@ -89,7 +93,7 @@ export default function AmneziawgFields() {
         <Button
           size="small"
           type="primary"
-          icon={<PlusOutlined />}
+          icon={<PlusOutlined aria-hidden />}
           aria-label={t('add')}
           onClick={() =>
             appendPeer({
@@ -178,14 +182,14 @@ function PeerAllowedIPs({ peerIndex }: { peerIndex: number }) {
           </FormField>
           {fields.length > 1 && (
             <InputAddon ariaLabel={t('remove')} onClick={() => remove(ipIdx)}>
-              <MinusOutlined />
+              <MinusOutlined aria-hidden />
             </InputAddon>
           )}
         </Space.Compact>
       ))}
       <Button
         size="small"
-        icon={<PlusOutlined />}
+        icon={<PlusOutlined aria-hidden />}
         aria-label={t('add')}
         onClick={() => append('')}
       />

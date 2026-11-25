@@ -13,6 +13,7 @@ import (
 	"github.com/mhsanaei/3x-ui/v3/internal/web/websocket"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 func notifyClientsChanged() {
@@ -53,6 +54,7 @@ func (a *ClientController) initRouter(g *gin.RouterGroup) {
 	g.GET("/list", a.list)
 	g.GET("/list/paged", a.listPaged)
 	g.GET("/get/:email", a.get)
+	g.GET("/get/subId/:subId", a.getBySubId)
 	g.GET("/get/tgId/:tgId", a.getByTgId)
 	g.GET("/traffic/:email", a.getTrafficByEmail)
 	g.GET("/subLinks/:subId", a.getSubLinks)
@@ -60,6 +62,7 @@ func (a *ClientController) initRouter(g *gin.RouterGroup) {
 	g.POST("/happLink/:id", a.generateHappLink)
 
 	g.POST("/add", a.create)
+	g.POST("/renewalPreview", a.renewalPreview)
 	g.POST("/update/:email", a.update)
 	g.POST("/del/:email", a.delete)
 	g.POST("/:email/attach", a.attach)
@@ -99,6 +102,16 @@ func (a *ClientController) list(c *gin.Context) {
 		return
 	}
 	jsonObj(c, rows, nil)
+}
+
+func (a *ClientController) renewalPreview(c *gin.Context) {
+	var request service.ClientRenewalPreviewRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		jsonObj(c, nil, err)
+		return
+	}
+	preview, err := a.clientService.PreviewRenewal(request, &a.settingService)
+	jsonObj(c, preview, err)
 }
 
 func (a *ClientController) listPaged(c *gin.Context) {
@@ -159,6 +172,27 @@ func (a *ClientController) get(c *gin.Context) {
 		return
 	}
 	jsonObj(c, payload, nil)
+}
+
+func (a *ClientController) getBySubId(c *gin.Context) {
+	records, err := a.clientService.GetRecordsBySubID(c.Param("subId"))
+	if err == nil && len(records) == 0 {
+		err = gorm.ErrRecordNotFound
+	}
+	if err != nil {
+		jsonMsg(c, I18nWeb(c, "pages.inbounds.toasts.obtain"), err)
+		return
+	}
+	results := make([]gin.H, 0, len(records))
+	for _, rec := range records {
+		payload, err := a.buildClientPayload(rec)
+		if err != nil {
+			jsonMsg(c, I18nWeb(c, "pages.inbounds.toasts.obtain"), err)
+			return
+		}
+		results = append(results, payload)
+	}
+	jsonObj(c, results, nil)
 }
 
 func (a *ClientController) getByTgId(c *gin.Context) {
@@ -506,15 +540,19 @@ func (a *ClientController) importClients(c *gin.Context) {
 		return
 	}
 	result, needRestart, err := a.clientService.ImportClients(&a.inboundService, items)
+	// Flagged before the error check: a failed traffic restore still leaves the
+	// clients created before it committed, and those need the restart and refresh.
+	if needRestart {
+		a.xrayService.SetToNeedRestart()
+	}
+	if needRestart || result.Created > 0 || err == nil {
+		notifyClientsChanged()
+	}
 	if err != nil {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
 		return
 	}
 	jsonObj(c, result, nil)
-	if needRestart {
-		a.xrayService.SetToNeedRestart()
-	}
-	notifyClientsChanged()
 }
 
 func (a *ClientController) delOrphans(c *gin.Context) {

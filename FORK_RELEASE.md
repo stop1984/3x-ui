@@ -52,7 +52,7 @@ v<upstream-major>.<upstream-minor>.<upstream-patch>-stop1984.<revision>
 Example:
 
 ```text
-v3.8.5-stop1984.2
+v3.11.0-stop1984.1
 ```
 
 The release workflow injects the tag into `internal/config.buildVersion`.
@@ -64,17 +64,19 @@ development builds keep upstream's `dev+<commit>` behavior.
 1. Confirm the branch is based on the intended upstream tag.
 2. Confirm `git status` contains no generated or accidental files.
 3. Run the full verification gate.
-4. Push the reviewed branch to `stop1984/3x-ui` and make it the repository's
-   default branch. Installer development sources resolve through `HEAD`, not a
-   hard-coded branch name.
+4. Push the reviewed branch to `stop1984/3x-ui`. Installer and updater entry
+   points resolve through the repository's default branch (`HEAD`).
 5. Create and push the signed or annotated fork tag.
-6. Wait for every release matrix job to finish.
-7. Verify every archive has a matching `.sha256` asset.
-8. Confirm the release is marked stable and the installer resolves it through
-   the fork's `/releases/latest` endpoint.
+6. Wait for all eight build jobs and the stable draft job. Verify the packaged
+   `amd64` binary reports the fork version. For a database upgrade, rehearse
+   the migration and smoke test with an isolated SQLite snapshot.
+7. Make the reviewed branch the default and publish the complete draft as the
+   latest stable release. Verify the public updater, `/releases/latest`, and the
+   download and checksum URLs resolve to the intended repository and tag.
 
-The workflow packages the panel, Xray-core, geodata, MTProto sidecar, and TUIC
-sidecar. A locally built bare `x-ui` binary is not a complete release archive.
+The workflow packages the panel, Xray-core, geodata and MTProto sidecar on its
+supported platforms. Starting with `v3.11.0`, TUIC runs inside the panel. The
+packaged build also includes the service units and shell menu.
 
 Container publishing is intentionally separate and manual. The
 `Build 3X-UI Fork Container` workflow publishes only to
@@ -89,15 +91,18 @@ Before changing a live installation:
    and reverse-proxy configuration.
 2. Record the current binary version and SHA-256.
 3. Verify the release archive checksum.
-4. Check the upstream release's **Before you upgrade** section.
+4. Review the upstream release notes and the fork changelog for schema or
+   protocol changes.
 5. Ensure the built-in subscription profile mode and restart-on-client-disable
    behavior match the operator's intent.
 
-Prefer the tagged fork installer/updater so bundled sidecars remain in sync:
+For an existing VPSNL installation, use the panel's **Stable** channel or run
+`sudo x-ui update`. To pin the same upgrade to a specific release from a root
+shell, download and run that tag's updater:
 
 ```bash
-bash <(curl -Ls https://raw.githubusercontent.com/stop1984/3x-ui/HEAD/install.sh) \
-  v3.8.5-stop1984.2
+XUI_UPDATE_TAG=v3.11.0-stop1984.1 \
+  bash <(curl -fsSL https://raw.githubusercontent.com/stop1984/3x-ui/v3.11.0-stop1984.1/update.sh)
 ```
 
 After rollout, verify:
@@ -107,7 +112,8 @@ After rollout, verify:
 - existing TLS, REALITY, XHTTP, mKCP, subscription, and node workflows still
   load;
 - no migration or restart loop appears in logs;
-- a JSON subscription omits empty direct-XHTTP `host` fields;
+- the existing `/json_freedom/` Xray JSON link still imports into v2rayN, and
+  direct XHTTP entries omit empty `host` fields;
 - mKCP with the intended TLS and FinalMask settings connects from a real client.
 
 Rollback means restoring the complete prior application tree and database

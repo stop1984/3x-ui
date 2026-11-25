@@ -16,10 +16,17 @@ const (
 	HashHeader = "X-Config-Sha256"
 	// CapsHeader is set by a node on its API responses to advertise support.
 	CapsHeader = "X-3x-Node-Caps"
+	// MasterPushHeader marks a request as a master's push, whatever its token scope.
+	MasterPushHeader = "X-3x-Master-Push"
 	// EncodingZstd is the Content-Encoding value for a zstd-compressed body.
 	EncodingZstd = "zstd"
 	// CapZstd is the capability token advertised in CapsHeader.
 	CapZstd = "zstd"
+	// CapAmneziaWGKernel marks a node that honours an AmneziaWG inbound's
+	// kernelMode; an older node drops the flag and serves it embedded.
+	CapAmneziaWGKernel = "awg-kernel"
+	// NodeCaps is the full CapsHeader value this build advertises.
+	NodeCaps = CapZstd + "," + CapAmneziaWGKernel
 
 	// maxDecodeBytes bounds in-memory decompression to defuse a zstd bomb from
 	// an (authenticated) node-API caller.

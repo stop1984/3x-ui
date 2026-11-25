@@ -1,5 +1,21 @@
 # Fork Changelog
 
+## v3.11.0-stop1984.1 - 2026-11-25
+
+Base: upstream `v3.11.0` (`c621ba9`), including Xray-core `v26.10.21`.
+
+- Merged upstream `v3.9.0` through `v3.11.0` and retained the fork's XHTTP,
+  mKCP TLS, and Salamander behavior. The UDP mask picker also keeps upstream's
+  Sudoku, client-side UDP Hop and server-side source-IP filter.
+- The panel and shell updater still use `stop1984/3x-ui`. The upstream shared
+  version comparator now understands fork revision numbers, including in node
+  compatibility checks.
+- Updates run one checked database migration while the panel is stopped. The
+  updater reports a failed service start as an update failure.
+- The release workflow builds all eight packages, verifies their checksums and
+  stages them in a draft for review before making the update available.
+- Upstream now runs TUIC in-process. The archives no longer ship `tuic-server`.
+
 ## v3.8.5-stop1984.2 - 2026-09-26
 
 Base: upstream `v3.8.5` (`7ef22f94c950ff09f0870e2295fa65ad5968742c`).

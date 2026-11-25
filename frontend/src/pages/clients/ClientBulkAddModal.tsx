@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   AutoComplete,
@@ -25,6 +25,7 @@ import { DateTimePicker, SelectAllClearButtons } from '@/components/form';
 import { FormField } from '@/components/form/rhf';
 import { useClients, type InboundOption } from '@/hooks/useClients';
 import { useFail2banStatusQuery, getLimitIpNotice } from '@/api/queries/useFail2banStatusQuery';
+import ClientRenewalFields from './ClientRenewalFields';
 import { ClientBulkAddFormSchema, type ClientBulkAddFormValues } from '@/schemas/client';
 
 const FLOW_OPTIONS = Object.values(TLS_FLOW_CONTROL);
@@ -38,6 +39,7 @@ const MULTI_CLIENT_PROTOCOLS = new Set([
   'wireguard',
   'amneziawg',
   'tuic',
+  'masque',
 ]);
 
 const EMPTY: ClientBulkAddFormValues = {
@@ -57,6 +59,7 @@ const EMPTY: ClientBulkAddFormValues = {
   expiryTime: 0,
   reset: 0,
   resetDay: 0,
+  resetWeekday: 0,
   resetMax: 0,
   trafficReset: 'never' as const,
   trafficResetDay: 1,
@@ -79,6 +82,7 @@ export default function ClientBulkAddModal({
   onSaved,
 }: ClientBulkAddModalProps) {
   const { t } = useTranslation();
+  const uid = useId();
   const [messageApi, messageContextHolder] = message.useMessage();
   const { bulkCreate } = useClients({ list: false });
 
@@ -127,19 +131,6 @@ export default function ClientBulkAddModal({
     }
     return '';
   }, [inboundIds, inbounds]);
-
-  const tuicIds = useMemo(() => {
-    const ids = new Set<number>();
-    for (const row of inbounds || []) {
-      if (row && row.protocol === 'tuic') ids.add(row.id);
-    }
-    return ids;
-  }, [inbounds]);
-
-  const hasTuic = useMemo(
-    () => (inboundIds || []).some((id) => tuicIds.has(id)),
-    [inboundIds, tuicIds],
-  );
 
   useEffect(() => {
     if (!showFlow && flow) {
@@ -215,6 +206,7 @@ export default function ClientBulkAddModal({
           expiryTime: current.expiryTime,
           reset: Number(current.reset) || 0,
           resetDay: Number(current.resetDay) || 0,
+          resetWeekday: Number(current.resetWeekday) || 0,
           resetMax: Number(current.resetMax) || 0,
           trafficReset: current.trafficReset || 'never',
           trafficResetDay: Number(current.trafficResetDay) || 1,
@@ -263,13 +255,18 @@ export default function ClientBulkAddModal({
       >
         <FormProvider {...methods}>
           <Form colon={false} labelCol={{ sm: { span: 8 } }} wrapperCol={{ sm: { span: 14 } }}>
-            <Form.Item label={t('pages.clients.attachedInbounds')} required>
+            <Form.Item
+              label={t('pages.clients.attachedInbounds')}
+              required
+              htmlFor={`${uid}-inbounds`}
+            >
               <SelectAllClearButtons
                 options={inboundOptions}
                 value={inboundIds}
                 onChange={(v) => methods.setValue('inboundIds', v)}
               />
               <Select
+                id={`${uid}-inbounds`}
                 mode="multiple"
                 value={inboundIds}
                 onChange={(v) => methods.setValue('inboundIds', v)}
@@ -332,16 +329,17 @@ export default function ClientBulkAddModal({
               </FormField>
             )}
 
-            <Form.Item label={t('pages.clients.subId')}>
+            <Form.Item label={t('pages.clients.subId')} htmlFor={`${uid}-sub-id`}>
               <Space.Compact style={{ display: 'flex' }}>
                 <Input
+                  id={`${uid}-sub-id`}
                   value={subId}
                   onChange={(e) => methods.setValue('subId', e.target.value)}
                   style={{ flex: 1 }}
                 />
                 <Button
                   aria-label={t('regenerate')}
-                  icon={<ReloadOutlined />}
+                  icon={<ReloadOutlined aria-hidden />}
                   onClick={() => methods.setValue('subId', RandomUtil.randomLowerAndNum(16))}
                 />
               </Space.Compact>
@@ -385,10 +383,11 @@ export default function ClientBulkAddModal({
               </FormField>
             )}
 
-            <Form.Item label={t('pages.clients.limitIp')}>
+            <Form.Item label={t('pages.clients.limitIp')} htmlFor={`${uid}-limit-ip`}>
               <Tooltip title={limitIpNotice || undefined}>
                 <span style={{ display: 'inline-flex' }}>
                   <InputNumber
+                    id={`${uid}-limit-ip`}
                     value={limitIp}
                     min={0}
                     disabled={limitIpDisabled}
@@ -402,16 +401,15 @@ export default function ClientBulkAddModal({
             <FormField
               name="totalGB"
               label={t('pages.clients.totalGB')}
-              tooltip={
-                hasTuic ? t('pages.clients.tuicTotalGBDesc') : t('pages.clients.totalGBDesc')
-              }
+              tooltip={t('pages.clients.totalGBDesc')}
               transform={{ output: (v) => Number(v) || 0 }}
             >
               <InputNumber min={0} step={1} />
             </FormField>
 
-            <Form.Item label={t('pages.clients.delayedStart')}>
+            <Form.Item label={t('pages.clients.delayedStart')} htmlFor={`${uid}-delayed-start`}>
               <Switch
+                id={`${uid}-delayed-start`}
                 checked={delayedStart}
                 onClick={() => {
                   setDelayedStart(!delayedStart);
@@ -421,48 +419,31 @@ export default function ClientBulkAddModal({
             </Form.Item>
 
             {delayedStart ? (
-              <Form.Item label={t('pages.clients.expireDays')}>
+              <Form.Item label={t('pages.clients.expireDays')} htmlFor={`${uid}-expire-days`}>
                 <InputNumber
+                  id={`${uid}-expire-days`}
                   value={delayedExpireDays}
                   min={0}
                   onChange={(v) => methods.setValue('expiryTime', -86400000 * (Number(v) || 0))}
                 />
               </Form.Item>
             ) : (
-              <Form.Item label={t('pages.inbounds.expireDate')}>
+              <Form.Item label={t('pages.inbounds.expireDate')} htmlFor={`${uid}-expiry`}>
                 <DateTimePicker
+                  id={`${uid}-expiry`}
                   value={expiryDate}
                   onChange={(next) => methods.setValue('expiryTime', next ? next.valueOf() : 0)}
                 />
               </Form.Item>
             )}
 
-            <FormField
-              name="reset"
-              label={t('pages.clients.renew')}
-              tooltip={t('pages.clients.renewDesc')}
-              transform={{ output: (v) => Number(v) || 0 }}
-            >
-              <InputNumber min={0} />
-            </FormField>
-
-            <FormField
-              name="resetDay"
-              label={t('pages.clients.renewOnDay')}
-              tooltip={t('pages.clients.renewOnDayDesc')}
-              transform={{ output: (v) => Number(v) || 0 }}
-            >
-              <InputNumber min={0} max={31} />
-            </FormField>
-
-            <FormField
-              name="resetMax"
-              label={t('pages.clients.renewMax')}
-              tooltip={t('pages.clients.renewMaxDesc')}
-              transform={{ output: (v) => Number(v) || 0 }}
-            >
-              <InputNumber min={0} />
-            </FormField>
+            <ClientRenewalFields
+              active={open}
+              delayedStart={delayedStart}
+              expiryTime={expiryTime}
+              bulk
+              setExpiry={(expiry) => methods.setValue('expiryTime', expiry)}
+            />
 
             <FormField name="trafficReset" label={t('pages.inbounds.periodicTrafficResetTitle')}>
               <Select

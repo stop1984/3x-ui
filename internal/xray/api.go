@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math"
 	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -21,13 +22,16 @@ import (
 	wgutil "github.com/mhsanaei/3x-ui/v3/internal/util/wireguard"
 
 	"github.com/xtls/xray-core/app/proxyman/command"
+	"github.com/xtls/xray-core/app/router"
 	routerService "github.com/xtls/xray-core/app/router/command"
 	statsService "github.com/xtls/xray-core/app/stats/command"
 	xnet "github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/platform"
 	"github.com/xtls/xray-core/common/protocol"
 	"github.com/xtls/xray-core/common/serial"
 	"github.com/xtls/xray-core/infra/conf"
 	hysteriaAccount "github.com/xtls/xray-core/proxy/hysteria/account"
+	"github.com/xtls/xray-core/proxy/masque"
 	"github.com/xtls/xray-core/proxy/shadowsocks"
 	"github.com/xtls/xray-core/proxy/shadowsocks_2022"
 	"github.com/xtls/xray-core/proxy/trojan"
@@ -143,6 +147,7 @@ func (x *XrayAPI) AddInbound(inbound []byte) error {
 		logger.Debug("Failed to unmarshal inbound:", err)
 		return err
 	}
+	localizeNoiseScripts(conf.StreamSetting)
 	config, err := conf.Build()
 	if err != nil {
 		logger.Debug("Failed to build inbound Detur:", err)
@@ -182,8 +187,34 @@ func ValidateOutboundConfig(outbound []byte) error {
 	if err := json.Unmarshal(outbound, detour); err != nil {
 		return err
 	}
-	_, err := detour.Build()
-	return err
+	localizeNoiseScripts(detour.StreamSetting)
+	built, err := detour.Build()
+	if err != nil {
+		return err
+	}
+	return validateWireguardRemoteDNS(built.ProxySettings)
+}
+
+// validateWireguardRemoteDNS refuses what conf.Build() lets through but the core feeds to
+// netip.MustParseAddr at startup: a non-IP remoteDNS entry, like "local" before 26.9.30.
+func validateWireguardRemoteDNS(settings *serial.TypedMessage) error {
+	if settings == nil {
+		return nil
+	}
+	instance, err := settings.GetInstance()
+	if err != nil {
+		return nil
+	}
+	device, ok := instance.(*wireguard.DeviceConfig)
+	if !ok || !device.IsClient {
+		return nil
+	}
+	for _, server := range device.DNS {
+		if _, err := netip.ParseAddr(server); err != nil {
+			return common.NewErrorf("wireguard remoteDNS entry %q is not an IP address", server)
+		}
+	}
+	return nil
 }
 
 // AddOutbound adds a new outbound configuration to the Xray core via gRPC.
@@ -200,6 +231,7 @@ func (x *XrayAPI) AddOutbound(outbound []byte) error {
 		logger.Debug("Failed to unmarshal outbound:", err)
 		return err
 	}
+	localizeNoiseScripts(conf.StreamSetting)
 	config, err := conf.Build()
 	if err != nil {
 		logger.Debug("Failed to build outbound detour:", err)
@@ -236,16 +268,7 @@ func (x *XrayAPI) ApplyRoutingConfig(routing []byte) error {
 		return common.NewError("xray RoutingServiceClient is not initialized")
 	}
 
-	// Rules referencing geoip:/geosite: need the dat files; point xray-core's
-	// in-process loader at the panel's bin folder where they live.
-	ensureXrayAssetLocation()
-
-	routerConf := new(conf.RouterConfig)
-	if err := json.Unmarshal(routing, routerConf); err != nil {
-		logger.Debug("Failed to unmarshal routing config:", err)
-		return err
-	}
-	config, err := routerConf.Build()
+	config, err := buildReloadableRouting(routing)
 	if err != nil {
 		logger.Debug("Failed to build routing config:", err)
 		return err
@@ -259,6 +282,21 @@ func (x *XrayAPI) ApplyRoutingConfig(routing []byte) error {
 		Config:       serial.ToTypedMessage(config),
 	})
 	return err
+}
+
+// buildReloadableRouting builds the rules and balancers RoutingService.AddRule swaps in.
+// The Lua routing script is fixed at core start, so its file is never resolved here.
+func buildReloadableRouting(routing []byte) (*router.Config, error) {
+	// Rules referencing geoip:/geosite: need the dat files; point xray-core's
+	// in-process loader at the panel's bin folder where they live.
+	ensureXrayAssetLocation()
+
+	routerConf := new(conf.RouterConfig)
+	if err := json.Unmarshal(routing, routerConf); err != nil {
+		return nil, err
+	}
+	routerConf.Script = ""
+	return routerConf.Build()
 }
 
 // BalancerInfo is the live state of one balancer inside the running core.
@@ -409,6 +447,16 @@ func IsMissingHandlerErr(err error) bool {
 		strings.Contains(msg, "not enough information")
 }
 
+// IsMissingUserErr reports whether err is xray removing a user the inbound does
+// not hold; a missing handler fails the same call and is not one.
+func IsMissingUserErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "not found") && !strings.Contains(msg, "failed to get handler")
+}
+
 // IsExistingTagErr reports whether err is xray's response to adding a handler
 // whose tag is already taken by a running handler.
 func IsExistingTagErr(err error) bool {
@@ -431,6 +479,54 @@ func IsUserExistsErr(err error) bool {
 // config builders run inside the panel process. The xray binary resolves assets
 // relative to its own executable, but the panel binary lives one level above
 // the bin folder, so an explicit location is required.
+// localizeNoiseScripts points each noise mask's relative "script" at the file the xray child loads:
+// xray-core 26.10.17 (#7124) compiles it inside Build, where the panel would look beside its own binary.
+func localizeNoiseScripts(stream *conf.StreamConfig) {
+	if stream == nil || stream.FinalMask == nil {
+		return
+	}
+	for i := range stream.FinalMask.Udp {
+		mask := &stream.FinalMask.Udp[i]
+		if !strings.EqualFold(mask.Type, "noise") || mask.Settings == nil {
+			continue
+		}
+		var settings map[string]any
+		if json.Unmarshal(*mask.Settings, &settings) != nil {
+			continue
+		}
+		script, _ := settings["script"].(string)
+		resolved := childLuaScriptPath(script)
+		if resolved == script {
+			continue
+		}
+		settings["script"] = resolved
+		if raw, err := json.Marshal(settings); err == nil {
+			localized := json.RawMessage(raw)
+			mask.Settings = &localized
+		}
+	}
+}
+
+// childLuaScriptPath resolves a relative Lua script the way the xray child does: it shares the
+// panel's working directory, then looks in its own bin folder instead of the panel's.
+func childLuaScriptPath(script string) string {
+	if script == "" || filepath.IsAbs(script) {
+		return script
+	}
+	if _, err := platform.ResolveLuaFile(script); err == nil {
+		return script
+	}
+	binDir, err := filepath.Abs(config.GetBinFolderPath())
+	if err != nil {
+		return script
+	}
+	inBin := filepath.Join(binDir, script)
+	if _, err := os.Stat(inBin); err != nil {
+		return script
+	}
+	return inBin
+}
+
 func ensureXrayAssetLocation() {
 	if os.Getenv("XRAY_LOCATION_ASSET") != "" || os.Getenv("xray.location.asset") != "" {
 		return
@@ -644,6 +740,15 @@ func buildUserAccount(protocolName string, user map[string]any) (*serial.TypedMe
 		return serial.ToTypedMessage(&hysteriaAccount.Account{
 			Auth: auth,
 		}), nil
+	case "masque":
+		pass, err := masqueUserPassword(user)
+		if err != nil {
+			return nil, err
+		}
+
+		return serial.ToTypedMessage(&masque.Account{
+			Password: pass,
+		}), nil
 	case "wireguard":
 		pubB64, err := getRequiredUserString(user, "publicKey")
 		if err != nil {
@@ -682,6 +787,15 @@ func buildUserAccount(protocolName string, user map[string]any) (*serial.TypedMe
 	default:
 		return nil, nil
 	}
+}
+
+// masqueUserPassword reads a MASQUE user's password: panel callers send the client's
+// "password", the hot diff sends the user as emitted for the core, keyed "pass".
+func masqueUserPassword(user map[string]any) (string, error) {
+	if pass, err := getOptionalUserString(user, "pass"); err != nil || pass != "" {
+		return pass, err
+	}
+	return getRequiredUserString(user, "password")
 }
 
 // AddUser adds a user to an inbound in the Xray core using the specified

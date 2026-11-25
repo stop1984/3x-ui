@@ -7,7 +7,6 @@ import (
 	"github.com/mhsanaei/3x-ui/v3/internal/database/model"
 	"github.com/mhsanaei/3x-ui/v3/internal/logger"
 	"github.com/mhsanaei/3x-ui/v3/internal/tuic"
-	"github.com/mhsanaei/3x-ui/v3/internal/xray"
 )
 
 func (s *InboundService) DesiredTuicInstances() ([]tuic.Instance, error) {
@@ -19,51 +18,105 @@ func (s *InboundService) DesiredTuicInstances() ([]tuic.Instance, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(inbounds) == 0 {
-		return nil, nil
-	}
+	return s.desiredTuicInstances(inbounds)
+}
 
-	ids := make([]int, 0, len(inbounds))
-	for _, ib := range inbounds {
-		ids = append(ids, ib.Id)
+func configuredTuicInstances(inbounds []*model.Inbound) []tuic.Instance {
+	instances := make([]tuic.Instance, 0)
+	for _, inbound := range inbounds {
+		if inbound.Protocol != model.TUIC || !inbound.Enable || inbound.NodeID != nil {
+			continue
+		}
+		inst, ok := tuic.ConfiguredInstanceFromInbound(inbound)
+		if !ok || tuic.ValidateClients(inst.Clients) != nil {
+			logger.Warningf("tuic: skipping inbound %d: invalid settings or clients", inbound.Id)
+			continue
+		}
+		inst.Clients = supportedTuicRelayClients(inst)
+		instances = append(instances, inst)
 	}
-	var disabledRows []xray.ClientTraffic
-	err = db.Model(xray.ClientTraffic{}).
-		Where("inbound_id IN ? AND enable = ?", ids, false).
-		Select("inbound_id", "email").
-		Find(&disabledRows).Error
+	return instances
+}
+
+func supportedTuicRelayClients(inst tuic.Instance) []tuic.TuicClientSettings {
+	clients := make([]tuic.TuicClientSettings, 0, len(inst.Clients))
+	for _, client := range inst.Clients {
+		if tuic.ValidateRelayEmail(client.Email) == nil {
+			clients = append(clients, client)
+		}
+	}
+	if len(clients) != len(inst.Clients) {
+		logger.Warningf("tuic: inbound %d: %d clients excluded: email must contain 1 to 255 UTF-8 bytes", inst.Id, len(inst.Clients)-len(clients))
+	}
+	return clients
+}
+
+func validateTuicClientEmails(protocol model.Protocol, clients []model.Client) error {
+	if protocol != model.TUIC {
+		return nil
+	}
+	for _, client := range clients {
+		if err := tuic.ValidateRelayEmail(client.Email); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *InboundService) desiredTuicInstances(inbounds []*model.Inbound) ([]tuic.Instance, error) {
+	db := database.GetDB()
+	reserved, err := templateInboundTags()
 	if err != nil {
 		return nil, err
 	}
-	disabled := make(map[int]map[string]struct{}, len(disabledRows))
-	for _, row := range disabledRows {
-		if disabled[row.InboundId] == nil {
-			disabled[row.InboundId] = map[string]struct{}{}
-		}
-		disabled[row.InboundId][row.Email] = struct{}{}
-	}
-
 	instances := make([]tuic.Instance, 0, len(inbounds))
 	for _, ib := range inbounds {
-		inst, ok := tuic.InstanceFromInbound(ib)
+		if ib.Protocol != model.TUIC || !ib.Enable || ib.NodeID != nil {
+			continue
+		}
+		if _, ok := tuic.InstanceFromInbound(ib); !ok {
+			logger.Warningf("tuic: skipping inbound %d: invalid settings JSON", ib.Id)
+			continue
+		}
+		if _, taken := reserved[ib.Tag]; taken {
+			logger.Warningf("tuic: skipping inbound %d: tag conflicts with Xray template", ib.Id)
+			continue
+		}
+		built, err := s.buildInboundForLocalRuntime(db, ib)
+		if err != nil {
+			return nil, err
+		}
+		inst, ok := tuic.InstanceFromInbound(built)
 		if !ok {
 			continue
 		}
-		if off := disabled[ib.Id]; len(off) > 0 {
-			kept := make([]tuic.TuicClientSettings, 0, len(inst.Clients))
-			for _, c := range inst.Clients {
-				if _, skip := off[c.Email]; !skip {
-					kept = append(kept, c)
-				}
-			}
-			inst.Clients = kept
-		}
-		if len(inst.Clients) == 0 {
-			continue
-		}
+		inst.Clients = supportedTuicRelayClients(inst)
 		instances = append(instances, inst)
 	}
-	return instances, nil
+	emails := make([]string, 0)
+	for _, inst := range instances {
+		for _, e := range inst.Clients {
+			emails = append(emails, e.Email)
+		}
+	}
+	disabled, err := trafficDisabledEmails(db, emails)
+	if err != nil {
+		return nil, err
+	}
+	served := instances[:0]
+	for _, inst := range instances {
+		kept := make([]tuic.TuicClientSettings, 0, len(inst.Clients))
+		for _, e := range inst.Clients {
+			if _, off := disabled[e.Email]; !off {
+				kept = append(kept, e)
+			}
+		}
+		inst.Clients = kept
+		if len(kept) > 0 {
+			served = append(served, inst)
+		}
+	}
+	return served, nil
 }
 
 func (s *InboundService) applyLocalTuic(inboundId int) {

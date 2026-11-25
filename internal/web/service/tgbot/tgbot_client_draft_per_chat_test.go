@@ -2,7 +2,6 @@ package tgbot
 
 import (
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -11,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mhsanaei/3x-ui/v3/internal/database"
+	"github.com/mhsanaei/3x-ui/v3/internal/database/dbtest"
 
 	"github.com/mymmrac/telego"
 )
@@ -23,23 +22,15 @@ func draftTexts(t *testing.T) (string, func(int64) []string) {
 	var mu sync.Mutex
 	texts := map[int64][]string{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
+		method := r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]
 		result := any(true)
-		if r.URL.Path == "/bot"+testBotToken+"/sendMessage" || r.URL.Path == "/bot"+testBotToken+"/editMessageText" {
-			var payload struct {
-				ChatID any    `json:"chat_id"`
-				Text   string `json:"text"`
-			}
-			_ = json.Unmarshal(body, &payload)
-			chatID := int64(0)
-			switch v := payload.ChatID.(type) {
-			case float64:
-				chatID = int64(v)
-			}
+		switch method {
+		case "sendMessage", "sendPhoto", "editMessageText", "editMessageMedia", "editMessageCaption":
+			sent := extractSentBody(t, r)
 			mu.Lock()
-			texts[chatID] = append(texts[chatID], payload.Text)
+			texts[sent.ChatID] = append(texts[sent.ChatID], sent.Text)
 			mu.Unlock()
-			result = map[string]any{"message_id": 1, "date": 0, "chat": map[string]any{"id": chatID, "type": "private"}}
+			result = map[string]any{"message_id": 1, "date": 0, "chat": map[string]any{"id": sent.ChatID, "type": "private"}}
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "result": result})
@@ -84,10 +75,7 @@ func lastDraftCard(t *testing.T, texts []string) string {
 // Regression test: one package-level draft per bot meant an admin's new client
 // was filled in by another chat's steps.
 func TestAddClientDraftIsPerChat(t *testing.T) {
-	if err := database.InitDB(filepath.Join(t.TempDir(), "x-ui.db")); err != nil {
-		t.Fatalf("InitDB: %v", err)
-	}
-	t.Cleanup(func() { _ = database.CloseDB() })
+	dbtest.InitDB(t, filepath.Join(t.TempDir(), "x-ui.db"))
 
 	const (
 		chatA = int64(7101)
@@ -139,7 +127,7 @@ func TestNonWizardCallbackTakesNoDraftLock(t *testing.T) {
 	)
 	decliningServer(t)
 
-	held := addClientDrafts.forChat(heldChat)
+	held := addClientDrafts.forActor(chatUser{chatID: heldChat, userID: 1})
 	held.Lock()
 	defer held.Unlock()
 
@@ -170,7 +158,7 @@ func TestNonWizardCallbackTakesNoDraftLock(t *testing.T) {
 	tap(spareChat, false, "add_client_to 1")
 
 	addClientDrafts.mu.Lock()
-	_, stored := addClientDrafts.drafts[spareChat]
+	_, stored := addClientDrafts.drafts[chatUser{chatID: spareChat, userID: 1}]
 	addClientDrafts.mu.Unlock()
 	if stored {
 		t.Errorf("draft stored for chat %d, want none until its wizard starts", spareChat)

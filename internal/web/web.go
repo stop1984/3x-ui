@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/tls"
 	"embed"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -16,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mhsanaei/3x-ui/v3/internal/amneziawgkern"
 	"github.com/mhsanaei/3x-ui/v3/internal/amneziawgnet"
 	"github.com/mhsanaei/3x-ui/v3/internal/config"
 	"github.com/mhsanaei/3x-ui/v3/internal/eventbus"
@@ -23,6 +25,7 @@ import (
 	"github.com/mhsanaei/3x-ui/v3/internal/mtproto"
 	"github.com/mhsanaei/3x-ui/v3/internal/tuic"
 	"github.com/mhsanaei/3x-ui/v3/internal/util/common"
+	"github.com/mhsanaei/3x-ui/v3/internal/util/cronspec"
 	"github.com/mhsanaei/3x-ui/v3/internal/util/sys"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/controller"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/job"
@@ -136,8 +139,12 @@ type Server struct {
 	cancel context.CancelFunc
 }
 
-// NewServer creates a new web server instance with a cancellable context.
-func NewServer() *Server {
+// NewServer installs the share-link provider before anything serves, so an early link request
+// no longer gets "sub link provider not registered".
+func NewServer(subLinkProvider service.SubLinkProvider) *Server {
+	if subLinkProvider != nil {
+		service.RegisterSubLinkProvider(subLinkProvider)
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Server{
 		ctx:    ctx,
@@ -384,13 +391,9 @@ func (s *Server) startTask(restartXray bool, loc *time.Location) {
 
 	// LDAP sync scheduling
 	if ldapEnabled, _ := s.settingService.GetLdapEnable(); ldapEnabled {
-		runtime, err := s.settingService.GetLdapSyncCron()
-		if err != nil || runtime == "" {
-			runtime = "@every 1m"
-		}
-		j := job.NewLdapSyncJob()
+		runtime, _ := s.settingService.GetLdapSyncCron()
 		// job has zero-value services with method receivers that read settings on demand
-		_, _ = s.cron.AddJob(runtime, j)
+		scheduleSettingJob(s.cron, "LDAP sync", runtime, "@every 1m", job.NewLdapSyncJob())
 	}
 
 	// Telegram-bot–dependent jobs: periodic stats report + callback-hash cleanup.
@@ -398,16 +401,9 @@ func (s *Server) startTask(restartXray bool, loc *time.Location) {
 	if (err == nil) && isTgbotenabled {
 		runtime, err := s.settingService.GetTgbotRuntime()
 		if err != nil {
-			logger.Warningf("Add NewStatsNotifyJob: failed to load runtime: %v; using default @daily", err)
-			runtime = "@daily"
-		} else if strings.TrimSpace(runtime) == "" {
-			logger.Warning("Add NewStatsNotifyJob runtime is empty, using default @daily")
-			runtime = "@daily"
+			logger.Warningf("Telegram notify: failed to load runtime: %v", err)
 		}
-		logger.Infof("Tg notify enabled,run at %s", runtime)
-		if _, err = s.cron.AddJob(runtime, job.NewStatsNotifyJob()); err != nil {
-			logger.Warningf("Add NewStatsNotifyJob: failed to schedule runtime %q: %v", runtime, err)
-		}
+		scheduleSettingJob(s.cron, "Telegram notify", runtime, "@daily", job.NewStatsNotifyJob())
 
 		// check for Telegram bot callback query hash storage reset
 		_, _ = s.cron.AddJob(cadenceCheckHash, job.NewCheckHashStorageJob())
@@ -418,18 +414,9 @@ func (s *Server) startTask(restartXray bool, loc *time.Location) {
 	if (err == nil) && isDiscordEnabled {
 		runtime, err := s.settingService.GetDiscordRunTime()
 		if err != nil {
-			logger.Warningf("Add NewDiscordNotifyJob: failed to load runtime: %v; using default @daily", err)
-			runtime = "@daily"
-		} else if strings.TrimSpace(runtime) == "" {
-			logger.Warning("Add NewDiscordNotifyJob runtime is empty, using default @daily")
-			runtime = "@daily"
+			logger.Warningf("Discord notify: failed to load runtime: %v", err)
 		}
-		logger.Infof("Discord notify enabled, run at %s", runtime)
-		if entryID, err := s.cron.AddJob(runtime, job.NewDiscordNotifyJob(s.discordService)); err != nil {
-			logger.Warningf("Add NewDiscordNotifyJob: failed to schedule runtime %q: %v", runtime, err)
-		} else {
-			s.discordNotifyEntryID = entryID
-		}
+		s.discordNotifyEntryID = scheduleSettingJob(s.cron, "Discord notify", runtime, "@daily", job.NewDiscordNotifyJob(s.discordService))
 	}
 
 	// CPU monitor publishes cpu.high events; register it whenever any notifier
@@ -568,11 +555,13 @@ func (s *Server) start(restartXray bool, startTgBot bool) (err error) {
 	// add/update/delete to either the local xray or a remote node panel.
 	// The closures bridge into XrayService (which owns the running xray
 	// process state) without forcing the runtime package to import service.
-	runtime.SetManager(runtime.NewManager(runtime.LocalDeps{
-		APIPort:        func() int { return s.xrayService.GetXrayAPIPort() },
-		SetNeedRestart: func() { s.xrayService.SetToNeedRestart() },
-	}))
-	runtime.GetManager().SetNodeEgressResolver(&s.settingService)
+	mgr := runtime.NewManager(runtime.LocalDeps{
+		APIPort:          func() int { return s.xrayService.GetXrayAPIPort() },
+		SetNeedRestart:   func() { s.xrayService.SetToNeedRestart() },
+		RequestReconcile: func() { s.xrayService.SetToNeedReconcile() },
+	})
+	runtime.SetManager(mgr)
+	mgr.SetNodeEgressResolver(&s.settingService)
 	// Supply the master client certificate for nodes in mtls mode. Issued lazily
 	// from the node CA on first use; runtime stays free of a service import.
 	runtime.SetMasterClientCertProvider(func() (tls.Certificate, error) {
@@ -626,9 +615,14 @@ func (s *Server) start(restartXray bool, startTgBot bool) (err error) {
 			// Opt-in node mTLS: when a trust CA is configured, request and verify
 			// client certs (VerifyClientCertIfGiven keeps browsers working). With
 			// no CA the listener is unchanged.
-			if pool, perr := s.settingService.NodeMtlsClientCAPool(); perr != nil {
-				logger.Warning("node mTLS: failed to build client CA trust pool:", perr)
-			} else if pool != nil {
+			pool, perr := s.settingService.NodeMtlsClientCAPool()
+			switch {
+			case errors.Is(perr, service.ErrNodeMtlsTrustBundleInvalid):
+				logger.Error("Node mTLS is configured but its trust bundle will not parse, so client certificates are not accepted:", perr)
+			case perr != nil:
+				logger.Error("Node mTLS trust bundle could not be read, so client certificates are not accepted:", perr)
+			}
+			if pool != nil {
 				applyNodeMtls(c, pool)
 				logger.Info("Node mTLS enabled: verifying client certificates for the node API")
 			}
@@ -704,16 +698,10 @@ func (s *Server) start(restartXray bool, startTgBot bool) (err error) {
 			return
 		}
 		runtime, err := s.settingService.GetDiscordRunTime()
-		if err != nil || strings.TrimSpace(runtime) == "" {
-			runtime = "@daily"
-		}
-		entryID, err := s.cron.AddJob(runtime, job.NewDiscordNotifyJob(s.discordService))
 		if err != nil {
-			logger.Warningf("Reload Discord notify: failed to schedule runtime %q: %v", runtime, err)
-		} else {
-			s.discordNotifyEntryID = entryID
-			logger.Infof("Discord notify rescheduled, run at %s", runtime)
+			logger.Warningf("Discord notify: failed to load runtime: %v", err)
 		}
+		s.discordNotifyEntryID = scheduleSettingJob(s.cron, "Discord notify", runtime, "@daily", job.NewDiscordNotifyJob(s.discordService))
 
 		if s.discordGateway != nil && !s.discordGateway.IsRunning() {
 			_ = s.discordGateway.Start(s.ctx)
@@ -730,6 +718,19 @@ func (s *Server) start(restartXray bool, startTgBot bool) (err error) {
 		}
 		s.tgbotService.SendMsgToTgbotAdmins("✅ Test message from 3x-ui")
 		return nil
+	})
+
+	controller.SetTgBotCapsFunc(func() (controller.TgBotCapabilities, error) {
+		caps, err := s.tgbotService.Capabilities()
+		if err != nil {
+			return controller.TgBotCapabilities{}, err
+		}
+		return controller.TgBotCapabilities{
+			InlineEnabled: caps.InlineEnabled,
+			GroupPrivacy:  caps.GroupPrivacy,
+			Username:      caps.Username,
+			Running:       caps.Running,
+		}, nil
 	})
 
 	controller.SetReloadTgbotFunc(func() {
@@ -785,15 +786,32 @@ func (s *Server) StopPanelOnly() error {
 
 func (s *Server) stop(stopXray bool, stopTgBot bool) error {
 	s.cancel()
-	if stopXray {
-		_ = s.xrayService.StopXray()
-		mtproto.GetManager().StopAll()
-		amneziawgnet.GetManager().StopAll()
-		tuic.GetManager().StopAll()
-		amneziawgnet.GetOutboundManager().StopAll()
+	var err1 error
+	var err2 error
+	if s.httpServer != nil {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		err1 = s.httpServer.Shutdown(shutdownCtx)
+		shutdownCancel()
 	}
 	if s.cron != nil {
-		s.cron.Stop()
+		<-s.cron.Stop().Done()
+	}
+	if stopXray {
+		tuic.GetManager().StopAll()
+		if err := job.NewTuicJob().FlushStoppedTraffic(); err != nil {
+			logger.Warning("persist final TUIC traffic on shutdown failed:", err)
+			err2 = err
+		}
+		mtproto.GetManager().StopAll()
+		amneziawgnet.GetManager().StopAll()
+		job.NewAmneziaWGJob().FlushKernelTraffic()
+		amneziawgkern.GetManager().StopAll()
+		amneziawgnet.GetOutboundManager().StopAll()
+	}
+	if stopXray {
+		if err := s.xrayService.StopXray(); err != nil && !errors.Is(err, service.ErrXrayNotRunning) {
+			err2 = common.Combine(err2, err)
+		}
 	}
 	if s.bus != nil {
 		s.bus.Stop()
@@ -814,15 +832,11 @@ func (s *Server) stop(stopXray bool, stopTgBot bool) error {
 	if s.wsHub != nil {
 		s.wsHub.Stop()
 	}
-	var err1 error
-	var err2 error
-	if s.httpServer != nil {
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer shutdownCancel()
-		err1 = s.httpServer.Shutdown(shutdownCtx)
-	}
 	if s.listener != nil {
-		err2 = s.listener.Close()
+		// httpServer.Shutdown already closes the listener; ignore closed errors.
+		if err := s.listener.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+			err1 = common.Combine(err1, err)
+		}
 	}
 	return common.Combine(err1, err2)
 }
@@ -844,4 +858,24 @@ func (s *Server) GetWSHub() any {
 
 func (s *Server) RestartXray() error {
 	return s.xrayService.RestartXray(true)
+}
+
+// scheduleSettingJob schedules j on an admin-typed spec, running it on fallback
+// when the spec is empty or a legacy value that no longer parses.
+func scheduleSettingJob(c *cron.Cron, name, spec, fallback string, j cron.Job) cron.EntryID {
+	if strings.TrimSpace(spec) == "" {
+		logger.Warningf("%s: schedule is empty, using default %s", name, fallback)
+		spec = fallback
+	}
+	schedule, err := cronspec.Parse(spec)
+	if err != nil {
+		logger.Warningf("%s: %v; using default %s", name, err, fallback)
+		spec = fallback
+		if schedule, err = cronspec.Parse(fallback); err != nil {
+			logger.Errorf("%s: default schedule %q: %v", name, fallback, err)
+			return 0
+		}
+	}
+	logger.Infof("%s scheduled, run at %s", name, spec)
+	return c.Schedule(schedule, j)
 }

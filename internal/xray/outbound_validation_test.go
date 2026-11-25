@@ -1,6 +1,8 @@
 package xray
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -38,5 +40,49 @@ func TestValidateOutboundConfig_RejectsUnencryptedPublicVless(t *testing.T) {
 	}`
 	if err := ValidateOutboundConfig([]byte(publicTLS)); err != nil {
 		t.Fatalf("a TLS-secured public vless outbound must stay valid, got: %v", err)
+	}
+}
+
+// The core feeds remoteDNS to netip.MustParseAddr when it creates the outbound, so a
+// non-IP entry ("local" until 26.9.30) panics it at startup; conf.Build() lets it through.
+func TestValidateOutboundConfig_RejectsWireguardRemoteDNSThatIsNotAnIP(t *testing.T) {
+	outbound := func(remoteDNS string) []byte {
+		return []byte(`{
+			"protocol": "wireguard",
+			"settings": {
+				"secretKey": "yAnz5TF+lXXJte14tji3zlMNq+hd2rYUIgJBgB3fBmk=",
+				"address": ["10.0.0.2/32"],
+				"peers": [{"publicKey": "xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=", "endpoint": "162.159.192.1:2408"}],
+				"remoteDNS": ` + remoteDNS + `
+			}
+		}`)
+	}
+	for _, rejected := range []string{`["local"]`, `["1.1.1.1", "dns.google"]`} {
+		err := ValidateOutboundConfig(outbound(rejected))
+		if err == nil || !strings.Contains(err.Error(), "remoteDNS") {
+			t.Errorf("remoteDNS %s: want a remoteDNS refusal, got %v", rejected, err)
+		}
+	}
+	if err := ValidateOutboundConfig(outbound(`["1.1.1.1", "2606:4700:4700::1111"]`)); err != nil {
+		t.Fatalf("IP remoteDNS entries must stay valid, got: %v", err)
+	}
+}
+
+// xray-core 26.10.17 compiles a noise mask's Lua script inside Build (#7124), where the panel would
+// look beside its own binary; the xray child finds a relative script in its bin folder.
+func TestValidateOutboundConfig_FindsANoiseScriptBesideTheXrayBinary(t *testing.T) {
+	bin := t.TempDir()
+	t.Setenv("XUI_BIN_FOLDER", bin)
+	t.Chdir(t.TempDir())
+	if err := os.WriteFile(filepath.Join(bin, "noise.lua"), []byte("function HandleNoise(plan) end\n"), 0o600); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+	outbound := []byte(`{
+		"protocol": "vless",
+		"settings": {"address": "10.0.0.1", "port": 443, "id": "b831381d-6324-4d53-ad4f-8cda48b30811", "encryption": "none"},
+		"streamSettings": {"network": "tcp", "finalmask": {"udp": [{"type": "noise", "settings": {"script": "noise.lua"}}]}}
+	}`)
+	if err := ValidateOutboundConfig(outbound); err != nil {
+		t.Fatalf("ValidateOutboundConfig = %v, want the script beside the xray binary found", err)
 	}
 }

@@ -4,6 +4,10 @@ import { generateAwgObfuscation } from '@/lib/xray/amneziawg-obfuscation';
 import type { AmneziawgInboundSettings } from '@/schemas/protocols/inbound/amneziawg';
 import type { HttpInboundSettings } from '@/schemas/protocols/inbound/http';
 import type { HysteriaClient, HysteriaInboundSettings } from '@/schemas/protocols/inbound/hysteria';
+import {
+  MASQUE_DEFAULT_ADDRESS_POOL,
+  type MasqueInboundSettings,
+} from '@/schemas/protocols/inbound/masque';
 import type { MixedInboundSettings } from '@/schemas/protocols/inbound/mixed';
 import type { MtprotoClient, MtprotoInboundSettings } from '@/schemas/protocols/inbound/mtproto';
 import type {
@@ -329,6 +333,7 @@ export function createDefaultAmneziawgInboundSettings(): AmneziawgInboundSetting
       primaryDns: '8.8.8.8',
       secondaryDns: '8.8.4.4',
       externalInterface: '',
+      kernelMode: false,
       ipv6Enabled: false,
       ipv6Subnet: '',
       ipv6ExternalInterface: '',
@@ -336,6 +341,10 @@ export function createDefaultAmneziawgInboundSettings(): AmneziawgInboundSetting
     },
     clients: [],
   };
+}
+
+export function createDefaultMasqueInboundSettings(): MasqueInboundSettings {
+  return { clients: [], address: [...MASQUE_DEFAULT_ADDRESS_POOL] };
 }
 
 export function createDefaultTuicInboundSettings(): TuicInboundSettings {
@@ -375,7 +384,8 @@ export type AnyInboundSettings =
   | WireguardInboundSettings
   | MtprotoInboundSettings
   | AmneziawgInboundSettings
-  | TuicInboundSettings;
+  | TuicInboundSettings
+  | MasqueInboundSettings;
 
 export function createDefaultInboundSettings(protocol: string): AnyInboundSettings | null {
   switch (protocol) {
@@ -405,6 +415,8 @@ export function createDefaultInboundSettings(protocol: string): AnyInboundSettin
       return createDefaultAmneziawgInboundSettings();
     case 'tuic':
       return createDefaultTuicInboundSettings();
+    case 'masque':
+      return createDefaultMasqueInboundSettings();
     default:
       return null;
   }

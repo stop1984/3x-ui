@@ -60,6 +60,7 @@ import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { useClients } from '@/hooks/useClients';
 import { useNodesQuery } from '@/api/queries/useNodesQuery';
+import { useHostsQuery } from '@/api/queries/useHostsQuery';
 import { useDatepicker } from '@/hooks/useDatepicker';
 import type {
   ClientRecord,
@@ -112,7 +113,7 @@ function UngroupIcon() {
         height: '1em',
       }}
     >
-      <TagsOutlined />
+      <TagsOutlined aria-hidden />
       <span
         aria-hidden="true"
         style={{
@@ -381,6 +382,15 @@ export default function ClientsPage() {
   // Node list for the Nodes filter; the section only renders when the panel
   // actually manages nodes (#4997).
   const { nodes } = useNodesQuery();
+  // Tunnel configs advertise these Hosts, so an empty list must mean "no hosts"
+  // and not "not loaded yet" — the page gate waits for it.
+  const {
+    hosts,
+    fetched: hostsFetched,
+    fetchError: hostsFetchError,
+    refetch: refetchHosts,
+  } = useHostsQuery();
+  const hostsError = hosts.length > 0 ? '' : hostsFetchError;
 
   const [togglingEmail, setTogglingEmail] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
@@ -769,11 +779,11 @@ export default function ClientsPage() {
   const onRefreshClick = useCallback(async () => {
     setRefreshing(true);
     try {
-      await refresh();
+      await Promise.all([refresh(), refetchHosts()]);
     } finally {
       setRefreshing(false);
     }
-  }, [refresh]);
+  }, [refresh, refetchHosts]);
 
   const openText = useCallback((opts: { title: string; content: string; fileName?: string }) => {
     setTextTitle(opts.title);
@@ -1071,6 +1081,7 @@ export default function ClientsPage() {
             checked={!!record.enable}
             size="small"
             loading={togglingEmail === record.email}
+            aria-label={t('pages.clients.enabled')}
             onChange={(next) => onToggleEnable(record, next)}
           />
         ),
@@ -1130,16 +1141,20 @@ export default function ClientsPage() {
         render: (_v, record) => {
           if (!record.group) return <Typography.Text type="secondary">—</Typography.Text>;
           const isActive = filters.groups.includes(record.group);
+          const filterByGroup = () => {
+            if (!isActive) setFilters({ ...filters, groups: [...filters.groups, record.group!] });
+          };
           return (
             <Tag
               color="geekblue"
               style={{ margin: 0, cursor: 'pointer', opacity: isActive ? 0.6 : 1 }}
+              role="button"
+              tabIndex={0}
               onClick={(e) => {
                 e.stopPropagation();
-                if (!isActive) {
-                  setFilters({ ...filters, groups: [...filters.groups, record.group!] });
-                }
+                filterByGroup();
               }}
+              onKeyDown={activateOnKey(filterByGroup)}
             >
               {record.group}
             </Tag>
@@ -1289,14 +1304,19 @@ export default function ClientsPage() {
 
         <Layout className="content-shell">
           <Layout.Content id="content-layout" className="content-area">
-            <Spin spinning={!fetched} delay={200} description={t('loading')} size="large">
-              {!fetched ? (
+            <Spin
+              spinning={!fetched || !hostsFetched}
+              delay={200}
+              description={t('loading')}
+              size="large"
+            >
+              {!fetched || !hostsFetched ? (
                 <div className="loading-spacer" />
-              ) : fetchError ? (
+              ) : fetchError || hostsError ? (
                 <Result
                   status="error"
                   title={t('somethingWentWrong')}
-                  subTitle={fetchError}
+                  subTitle={fetchError || hostsError}
                   extra={
                     <Button type="primary" loading={refreshing} onClick={onRefreshClick}>
                       {t('refresh')}
@@ -1312,7 +1332,7 @@ export default function ClientsPage() {
                           <SummaryStat
                             title={t('clients')}
                             value={summary.total}
-                            prefix={<TeamOutlined />}
+                            prefix={<TeamOutlined aria-hidden />}
                             onSelect={() => selectBucket(null)}
                           />
                         </Col>
@@ -1378,7 +1398,7 @@ export default function ClientsPage() {
                           {selectedRowKeys.length === 0 ? (
                             <Button
                               type="primary"
-                              icon={<PlusOutlined />}
+                              icon={<PlusOutlined aria-hidden />}
                               onClick={onAdd}
                               aria-label={t('pages.clients.addClients')}
                             >
@@ -1403,20 +1423,20 @@ export default function ClientsPage() {
                                   ? [
                                       {
                                         key: 'attach',
-                                        icon: <UsergroupAddOutlined />,
+                                        icon: <UsergroupAddOutlined aria-hidden />,
                                         label: t('pages.clients.attach'),
                                         onClick: () => setBulkAttachOpen(true),
                                       },
                                       {
                                         key: 'detach',
-                                        icon: <UsergroupDeleteOutlined />,
+                                        icon: <UsergroupDeleteOutlined aria-hidden />,
                                         label: t('pages.clients.detach'),
                                         danger: true,
                                         onClick: () => setBulkDetachOpen(true),
                                       },
                                       {
                                         key: 'addToGroup',
-                                        icon: <TagsOutlined />,
+                                        icon: <TagsOutlined aria-hidden />,
                                         label: t('pages.clients.addToGroup'),
                                         onClick: () => setBulkGroupOpen(true),
                                       },
@@ -1430,26 +1450,26 @@ export default function ClientsPage() {
                                       { type: 'divider' as const },
                                       {
                                         key: 'enable',
-                                        icon: <CheckCircleOutlined />,
+                                        icon: <CheckCircleOutlined aria-hidden />,
                                         label: t('pages.clients.enable'),
                                         onClick: () => onBulkSetEnable(true),
                                       },
                                       {
                                         key: 'disable',
-                                        icon: <StopOutlined />,
+                                        icon: <StopOutlined aria-hidden />,
                                         label: t('pages.clients.disable'),
                                         danger: true,
                                         onClick: () => onBulkSetEnable(false),
                                       },
                                       {
                                         key: 'adjust',
-                                        icon: <ClockCircleOutlined />,
+                                        icon: <ClockCircleOutlined aria-hidden />,
                                         label: t('pages.clients.adjust'),
                                         onClick: () => setBulkAdjustOpen(true),
                                       },
                                       {
                                         key: 'subLinks',
-                                        icon: <LinkOutlined />,
+                                        icon: <LinkOutlined aria-hidden />,
                                         label: t('pages.clients.subLinks'),
                                         onClick: () => setSubLinksOpen(true),
                                       },
@@ -1457,39 +1477,39 @@ export default function ClientsPage() {
                                   : [
                                       {
                                         key: 'bulk',
-                                        icon: <UsergroupAddOutlined />,
+                                        icon: <UsergroupAddOutlined aria-hidden />,
                                         label: t('pages.clients.bulk'),
                                         onClick: () => setBulkAddOpen(true),
                                       },
                                       {
                                         key: 'export',
-                                        icon: <DownloadOutlined />,
+                                        icon: <DownloadOutlined aria-hidden />,
                                         label: t('pages.clients.exportClients'),
                                         onClick: onExportClients,
                                       },
                                       {
                                         key: 'import',
-                                        icon: <UploadOutlined />,
+                                        icon: <UploadOutlined aria-hidden />,
                                         label: t('pages.clients.importClients'),
                                         onClick: onImportClients,
                                       },
                                       {
                                         key: 'resetAll',
-                                        icon: <RetweetOutlined />,
+                                        icon: <RetweetOutlined aria-hidden />,
                                         label: t('pages.clients.resetAllTraffics'),
                                         onClick: onResetAllTraffics,
                                       },
                                       { type: 'divider' as const },
                                       {
                                         key: 'delDepleted',
-                                        icon: <RestOutlined />,
+                                        icon: <RestOutlined aria-hidden />,
                                         label: t('pages.clients.delDepleted'),
                                         danger: true,
                                         onClick: onDelDepleted,
                                       },
                                       {
                                         key: 'delOrphans',
-                                        icon: <DisconnectOutlined />,
+                                        icon: <DisconnectOutlined aria-hidden />,
                                         label: t('pages.clients.delOrphans'),
                                         danger: true,
                                         onClick: onDeleteOrphans,
@@ -1497,14 +1517,14 @@ export default function ClientsPage() {
                                     ],
                             }}
                           >
-                            <Button icon={<MoreOutlined />} aria-label={t('more')}>
+                            <Button icon={<MoreOutlined aria-hidden />} aria-label={t('more')}>
                               {!isMobile && t('more')}
                             </Button>
                           </Dropdown>
                           {selectedRowKeys.length > 0 && (
                             <Button
                               danger
-                              icon={<DeleteOutlined />}
+                              icon={<DeleteOutlined aria-hidden />}
                               onClick={onBulkDelete}
                               style={{ marginInlineStart: 'auto' }}
                               aria-label={t('delete')}
@@ -1521,14 +1541,14 @@ export default function ClientsPage() {
                           onChange={(e) => setSearchKey(e.target.value)}
                           placeholder={t('pages.clients.searchPlaceholder')}
                           allowClear
-                          prefix={<SearchOutlined />}
+                          prefix={<SearchOutlined aria-hidden />}
                           size={isMobile ? 'small' : 'middle'}
                           style={{ maxWidth: 320 }}
                           aria-label={t('search')}
                         />
                         <Badge count={activeCount} size="small" offset={[-4, 4]}>
                           <Button
-                            icon={<FilterOutlined />}
+                            icon={<FilterOutlined aria-hidden />}
                             size={isMobile ? 'small' : 'middle'}
                             onClick={() => setFilterDrawerOpen(true)}
                             type={activeCount > 0 ? 'primary' : 'default'}
@@ -1541,7 +1561,7 @@ export default function ClientsPage() {
                           value={sortValueFor(sortColumn, sortOrder)}
                           aria-label={t('sort')}
                           size={isMobile ? 'small' : 'middle'}
-                          suffix={<SortAscendingOutlined />}
+                          suffix={<SortAscendingOutlined aria-hidden />}
                           style={{ minWidth: isMobile ? 130 : 200 }}
                           onChange={(value) => {
                             const opt = SORT_OPTIONS.find((o) => o.value === value);
@@ -1694,7 +1714,10 @@ export default function ClientsPage() {
                           locale={{
                             emptyText: (
                               <div className="clients-empty">
-                                <TeamOutlined style={{ fontSize: 32, marginBottom: 8 }} />
+                                <TeamOutlined
+                                  aria-hidden
+                                  style={{ fontSize: 32, marginBottom: 8 }}
+                                />
                                 <div>{t('noData')}</div>
                               </div>
                             ),
@@ -1719,7 +1742,7 @@ export default function ClientsPage() {
                             )}
                             {filteredClients.length === 0 && (
                               <div className="card-empty">
-                                <TeamOutlined style={{ fontSize: 28, opacity: 0.5 }} />
+                                <TeamOutlined aria-hidden style={{ fontSize: 28, opacity: 0.5 }} />
                                 <div>{t('noData')}</div>
                               </div>
                             )}
@@ -1784,6 +1807,7 @@ export default function ClientsPage() {
                                         checked={!!row.enable}
                                         size="small"
                                         loading={togglingEmail === row.email}
+                                        aria-label={t('pages.clients.enabled')}
                                         onChange={(next) => onToggleEnable(row, next)}
                                       />
                                       <Dropdown
@@ -1795,7 +1819,8 @@ export default function ClientsPage() {
                                               key: 'qr',
                                               label: (
                                                 <>
-                                                  <QrcodeOutlined /> {t('pages.clients.qrCode')}
+                                                  <QrcodeOutlined aria-hidden />{' '}
+                                                  {t('pages.clients.qrCode')}
                                                 </>
                                               ),
                                               onClick: () => onShowQr(row.email),
@@ -1804,7 +1829,7 @@ export default function ClientsPage() {
                                               key: 'reset',
                                               label: (
                                                 <>
-                                                  <RetweetOutlined />{' '}
+                                                  <RetweetOutlined aria-hidden />{' '}
                                                   {t('pages.inbounds.resetTraffic')}
                                                 </>
                                               ),
@@ -1814,7 +1839,7 @@ export default function ClientsPage() {
                                               key: 'edit',
                                               label: (
                                                 <>
-                                                  <EditOutlined /> {t('edit')}
+                                                  <EditOutlined aria-hidden /> {t('edit')}
                                                 </>
                                               ),
                                               onClick: () => onEdit(row.email),
@@ -1824,7 +1849,7 @@ export default function ClientsPage() {
                                               danger: true,
                                               label: (
                                                 <>
-                                                  <DeleteOutlined /> {t('delete')}
+                                                  <DeleteOutlined aria-hidden /> {t('delete')}
                                                 </>
                                               ),
                                               onClick: () => onDelete(row.email),
@@ -1836,7 +1861,7 @@ export default function ClientsPage() {
                                           type="text"
                                           size="small"
                                           className="row-action-trigger"
-                                          icon={<MoreOutlined />}
+                                          icon={<MoreOutlined aria-hidden />}
                                           aria-label={t('more')}
                                         />
                                       </Dropdown>
@@ -1898,6 +1923,7 @@ export default function ClientsPage() {
             tunnelAllowedIPs={viewingTunnelAllowedIPs}
             isOnline={infoClient ? isOnline(infoClient.email) : false}
             subSettings={subSettings}
+            hosts={hosts}
             onOpenChange={setInfoOpen}
           />
         </LazyMount>
@@ -1908,6 +1934,7 @@ export default function ClientsPage() {
             inboundsById={inboundsById}
             tunnelAllowedIPs={viewingTunnelAllowedIPs}
             subSettings={subSettings}
+            hosts={hosts}
             onOpenChange={setQrOpen}
           />
         </LazyMount>

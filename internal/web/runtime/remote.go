@@ -12,11 +12,13 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/mhsanaei/3x-ui/v3/internal/amneziawg"
 	"github.com/mhsanaei/3x-ui/v3/internal/crypto/nodetoken"
 	"github.com/mhsanaei/3x-ui/v3/internal/database/model"
 	"github.com/mhsanaei/3x-ui/v3/internal/logger"
@@ -90,6 +92,10 @@ type Remote struct {
 	// seen, config pushes to this node are zstd-compressed. Old nodes never set
 	// it, so they keep receiving plain bodies (mixed-version safe).
 	supportsZstd bool
+	// capsSeen tells a node that advertised no AmneziaWG kernel support apart
+	// from one this Remote has not heard from yet.
+	capsSeen          bool
+	supportsAWGKernel bool
 
 	// Per-node client honoring the TLS verify mode, built once and reused; a
 	// node config change drops the cached Remote so the next one rebuilds it.
@@ -130,12 +136,41 @@ func (r *Remote) nodeSupportsZstd() bool {
 // recordCaps learns the node's capabilities from a response header so later
 // pushes can use the negotiated envelope.
 func (r *Remote) recordCaps(h http.Header) {
-	if !strings.Contains(h.Get(wirecodec.CapsHeader), wirecodec.CapZstd) {
-		return
-	}
+	caps := strings.Split(h.Get(wirecodec.CapsHeader), ",")
 	r.mu.Lock()
-	r.supportsZstd = true
-	r.mu.Unlock()
+	defer r.mu.Unlock()
+	r.capsSeen = true
+	r.supportsAWGKernel = slices.Contains(caps, wirecodec.CapAmneziaWGKernel)
+	if slices.Contains(caps, wirecodec.CapZstd) {
+		r.supportsZstd = true
+	}
+}
+
+// requireAmneziaWGKernel refuses to push a kernel-mode AmneziaWG inbound to a
+// node that would drop the flag and silently serve it on the embedded datapath.
+func (r *Remote) requireAmneziaWGKernel(ctx context.Context, ib *model.Inbound) error {
+	if ib.Protocol != model.AmneziaWG {
+		return nil
+	}
+	var settings amneziawg.InboundSettings
+	if err := json.Unmarshal([]byte(ib.Settings), &settings); err != nil || settings.Server == nil || !settings.Server.KernelMode {
+		return nil
+	}
+	r.mu.RLock()
+	seen := r.capsSeen
+	r.mu.RUnlock()
+	if !seen {
+		if err := r.refreshRemoteIDs(ctx); err != nil {
+			return err
+		}
+	}
+	r.mu.RLock()
+	supported := r.supportsAWGKernel
+	r.mu.RUnlock()
+	if !supported {
+		return fmt.Errorf("node %s does not support AmneziaWG kernel mode; upgrade its panel or switch the inbound to the embedded datapath", r.node.Name)
+	}
+	return nil
 }
 
 // httpClient lazily builds and caches the per-node client honoring the TLS
@@ -237,6 +272,7 @@ func (r *Remote) do(ctx context.Context, method, path string, body any) (*envelo
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set(wirecodec.MasterPushHeader, "1")
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
@@ -359,6 +395,15 @@ func (r *Remote) cacheDel(tag string) {
 	delete(r.pushedFP, tag)
 }
 
+// forgetTag drops every tag form cacheGetTag would match, once the node reports
+// none of them, so the next resolve re-reads the node instead of a deleted id.
+func (r *Remote) forgetTag(tag string) {
+	prefix := nodeInboundTagPrefix(r.node.Id)
+	bare := strings.TrimPrefix(tag, prefix)
+	r.cacheDel(bare)
+	r.cacheDel(prefix + bare)
+}
+
 func (r *Remote) ListRemoteTags(ctx context.Context) ([]string, error) {
 	if err := r.refreshRemoteIDs(ctx); err != nil {
 		return nil, err
@@ -422,6 +467,9 @@ func (r *Remote) refreshRemoteIDs(ctx context.Context) error {
 }
 
 func (r *Remote) AddInbound(ctx context.Context, ib *model.Inbound) error {
+	if err := r.requireAmneziaWGKernel(ctx, ib); err != nil {
+		return err
+	}
 	payload := wireInbound(ib, r.node.Id)
 	env, err := r.do(ctx, http.MethodPost, "panel/api/inbounds/add", payload)
 	if err != nil {
@@ -457,6 +505,9 @@ func (r *Remote) UpdateInbound(ctx context.Context, oldIb, newIb *model.Inbound)
 	id, err := r.resolveRemoteID(ctx, oldIb.Tag)
 	if err != nil {
 		return r.AddInbound(ctx, newIb)
+	}
+	if err := r.requireAmneziaWGKernel(ctx, newIb); err != nil {
+		return err
 	}
 	payload := wireInbound(newIb, r.node.Id)
 	if _, err := r.do(ctx, http.MethodPost, "panel/api/inbounds/update/"+strconv.Itoa(id), payload); err != nil {
@@ -494,6 +545,8 @@ func (r *Remote) ReconcileInbound(ctx context.Context, ib *model.Inbound, exists
 		if ok && prev == fp {
 			return false, nil
 		}
+	} else {
+		r.forgetTag(ib.Tag)
 	}
 	if err := r.UpdateInbound(ctx, ib, ib); err != nil {
 		return false, err
@@ -514,6 +567,17 @@ func (r *Remote) recordPushedInbound(ib *model.Inbound) {
 // adopts a node's settings serialization.
 func (r *Remote) RecordAdoptedInbound(ib *model.Inbound) {
 	r.recordPushedInbound(ib)
+}
+
+// ForgetPushedInbound drops the reconcile-skip fingerprint once the node is seen
+// without the payload it stamped, so the next reconcile re-sends the inbound.
+func (r *Remote) ForgetPushedInbound(tag string) {
+	prefix := nodeInboundTagPrefix(r.node.Id)
+	bare := strings.TrimPrefix(tag, prefix)
+	r.mu.Lock()
+	delete(r.pushedFP, bare)
+	delete(r.pushedFP, prefix+bare)
+	r.mu.Unlock()
 }
 
 // AdoptInboundAlias records a deployed alias without mutating either panel.
@@ -701,13 +765,23 @@ func (r *Remote) ResetClientTraffic(ctx context.Context, _ *model.Inbound, email
 	return err
 }
 
+// ResetClientTraffics zeroes many clients on the node in one request.
+func (r *Remote) ResetClientTraffics(ctx context.Context, emails []string) error {
+	_, err := r.do(ctx, http.MethodPost, "panel/api/clients/bulkResetTraffic", map[string]any{"emails": emails})
+	return err
+}
+
 func (r *Remote) ResetAllTraffics(ctx context.Context) error {
 	_, err := r.do(ctx, http.MethodPost, "panel/api/inbounds/resetAllTraffics", nil)
 	return err
 }
 
 func (r *Remote) ResetInboundTraffic(ctx context.Context, ib *model.Inbound) error {
-	_, err := r.do(ctx, http.MethodPost, fmt.Sprintf("panel/api/inbounds/%d/resetTraffic", ib.Id), nil)
+	id, err := r.resolveRemoteID(ctx, ib.Tag)
+	if err != nil {
+		return fmt.Errorf("remote ResetInboundTraffic: resolve tag %q: %w", ib.Tag, err)
+	}
+	_, err = r.do(ctx, http.MethodPost, fmt.Sprintf("panel/api/inbounds/%d/resetTraffic", id), nil)
 	return err
 }
 
@@ -810,6 +884,7 @@ func wireInbound(ib *model.Inbound, remoteNodeID int) url.Values {
 	v.Set("total", strconv.FormatInt(ib.Total, 10))
 	v.Set("remark", ib.Remark)
 	v.Set("subSortIndex", strconv.Itoa(ib.SubSortIndex))
+	v.Set("excludeFromSub", strconv.FormatBool(ib.ExcludeFromSub))
 	v.Set("enable", strconv.FormatBool(ib.Enable))
 	v.Set("expiryTime", strconv.FormatInt(ib.ExpiryTime, 10))
 	v.Set("listen", ib.Listen)

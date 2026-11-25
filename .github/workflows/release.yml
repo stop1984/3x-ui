@@ -1,23 +1,13 @@
-name: Release 3X-UI
+name: Release 3X-UI Fork
 
 on:
   workflow_dispatch:
+  # The default fork branch feeds the dev channel. Fork tags prepare drafts.
   push:
     branches:
-      - "**"
+      - 'fork/**'
     tags:
-      - "v*.*.*"
-    paths:
-      - "**.go"
-      - "go.mod"
-      - "go.sum"
-      - "**.sh"
-      - "frontend/**"
-      - "x-ui.service.debian"
-      - "x-ui.service.arch"
-      - "x-ui.service.rhel"
-      - ".github/workflows/release.yml"
-  pull_request:
+      - 'v*.*.*-stop1984.*'
     paths:
       - "**.go"
       - "go.mod"
@@ -31,8 +21,9 @@ on:
 
 jobs:
   build:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/') || github.ref_name == github.event.repository.default_branch
     permissions:
-      contents: write
+      contents: read
     strategy:
       # One platform hitting a transient outage must not cancel the other six.
       fail-fast: false
@@ -126,7 +117,7 @@ jobs:
           cd x-ui/bin
 
           # Download dependencies
-          Xray_URL="https://github.com/XTLS/Xray-core/releases/download/v26.9.9/"
+          Xray_URL="https://github.com/XTLS/Xray-core/releases/download/v26.10.21/"
           if [ "${{ matrix.platform }}" == "amd64" ]; then
             fetch ${Xray_URL}Xray-linux-64.zip
             unzip Xray-linux-64.zip
@@ -182,28 +173,6 @@ jobs:
               rm -rf "${MTG_PKG}" "${MTG_PKG}.tar.gz"
               ;;
           esac
-          case "${{ matrix.platform }}" in
-            amd64)
-              curl -sfLRO $CURL_RETRY "https://github.com/EAimTY/tuic/releases/download/tuic-server-1.0.0/tuic-server-1.0.0-x86_64-unknown-linux-musl"
-              mv "tuic-server-1.0.0-x86_64-unknown-linux-musl" "tuic-server"
-              chmod +x "tuic-server"
-              ;;
-            arm64)
-              curl -sfLRO $CURL_RETRY "https://github.com/EAimTY/tuic/releases/download/tuic-server-1.0.0/tuic-server-1.0.0-aarch64-unknown-linux-musl"
-              mv "tuic-server-1.0.0-aarch64-unknown-linux-musl" "tuic-server"
-              chmod +x "tuic-server"
-              ;;
-            armv7)
-              curl -sfLRO $CURL_RETRY "https://github.com/EAimTY/tuic/releases/download/tuic-server-1.0.0/tuic-server-1.0.0-armv7-unknown-linux-musleabihf"
-              mv "tuic-server-1.0.0-armv7-unknown-linux-musleabihf" "tuic-server"
-              chmod +x "tuic-server"
-              ;;
-            386)
-              curl -sfLRO $CURL_RETRY "https://github.com/EAimTY/tuic/releases/download/tuic-server-1.0.0/tuic-server-1.0.0-i686-unknown-linux-musl"
-              mv "tuic-server-1.0.0-i686-unknown-linux-musl" "tuic-server"
-              chmod +x "tuic-server"
-              ;;
-          esac
           cd ../..
 
       - name: Package
@@ -219,30 +188,14 @@ jobs:
             ./x-ui-linux-${{ matrix.platform }}.tar.gz
             ./x-ui-linux-${{ matrix.platform }}.tar.gz.sha256
 
-      - name: Upload files to GH release
-        uses: svenstaro/upload-release-action@v2
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
-        with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          tag: ${{ github.ref_name }}
-          release_name: 3X-UI Fork ${{ github.ref_name }}
-          body: |
-            stop1984/3x-ui fork release based on upstream 3X-UI.
-
-            See `CHANGELOG_FORK.md`, `FORK_HARDENING.md`, and `FORK_RELEASE.md`
-            in this tag for the exact delta, verification, and upgrade notes.
-          file: x-ui-linux-${{ matrix.platform }}.tar.gz*
-          file_glob: true
-          overwrite: true
-          prerelease: false
-
   # =================================
   #  Windows Build
   # =================================
   build-windows:
     name: Build for Windows
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/') || github.ref_name == github.event.repository.default_branch
     permissions:
-      contents: write
+      contents: read
     strategy:
       matrix:
         platform:
@@ -300,6 +253,11 @@ jobs:
           go version
           gcc --version
 
+          # Version info + manifest resource: a bare stripped Go exe scores high on AV heuristics.
+          PANEL_VERSION=$(tr -d '[:space:]' < internal/config/version)
+          go run github.com/tc-hib/go-winres@v0.3.3 make --arch amd64 \
+            --product-version "$PANEL_VERSION" --file-version "$PANEL_VERSION"
+
           # Stamp the commit into per-commit (dev channel) builds only.
           LDFLAGS="-w -s"
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
@@ -314,12 +272,12 @@ jobs:
         run: |
           $retry = @{ MaximumRetryCount = 5; RetryIntervalSec = 10 }
           mkdir x-ui
-          Copy-Item xui-release.exe x-ui\x-ui.exe
+          Copy-Item xui-release.exe x-ui\3x-ui.exe
           mkdir x-ui\bin
           cd x-ui\bin
 
           # Download Xray for Windows
-          $Xray_URL = "https://github.com/XTLS/Xray-core/releases/download/v26.9.9/"
+          $Xray_URL = "https://github.com/XTLS/Xray-core/releases/download/v26.10.21/"
           Invoke-WebRequest @retry -Uri "${Xray_URL}Xray-windows-64.zip" -OutFile "Xray-windows-64.zip"
           Expand-Archive -Path "Xray-windows-64.zip" -DestinationPath .
           Remove-Item "Xray-windows-64.zip"
@@ -344,9 +302,6 @@ jobs:
           Move-Item "mtg-tmp/$MTG_PKG/mtg-multi.exe" "mtg-windows-amd64.exe"
           Remove-Item -Recurse -Force "mtg-tmp", "$MTG_PKG.zip"
 
-          # TUIC sidecar for Windows
-          curl.exe -sfLRo "tuic-server-windows-amd64.exe" --retry 5 --retry-all-errors --retry-delay 3 "https://github.com/EAimTY/tuic/releases/download/tuic-server-1.0.0/tuic-server-1.0.0-x86_64-pc-windows-msvc.exe"
-
           cd ..
           Copy-Item -Path ..\windows_files\* -Destination . -Recurse
           cd ..
@@ -366,22 +321,41 @@ jobs:
             ./x-ui-windows-amd64.zip
             ./x-ui-windows-amd64.zip.sha256
 
-      - name: Upload files to GH release
-        uses: svenstaro/upload-release-action@v2
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+  prepare-stable:
+    name: Prepare stable release draft
+    needs: [build, build-windows]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v8
         with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          tag: ${{ github.ref_name }}
-          release_name: 3X-UI Fork ${{ github.ref_name }}
-          body: |
-            stop1984/3x-ui fork release based on upstream 3X-UI.
+          path: stable-artifacts
+          merge-multiple: true
 
-            See `CHANGELOG_FORK.md`, `FORK_HARDENING.md`, and `FORK_RELEASE.md`
-            in this tag for the exact delta, verification, and upgrade notes.
-          file: x-ui-windows-amd64.zip*
-          file_glob: true
-          overwrite: true
-          prerelease: false
+      - name: Verify package checksums and create draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        working-directory: stable-artifacts
+        run: |
+          set -euo pipefail
+          packages=(x-ui-linux-{amd64,arm64,armv7,armv6,386,armv5,s390x}.tar.gz x-ui-windows-amd64.zip)
+          files=()
+          for package in "${packages[@]}"; do
+            sha256sum --check --strict "${package}.sha256"
+            files+=("$package" "${package}.sha256")
+          done
+          if release=$(gh release view "$TAG" --json isDraft); then
+            [[ $(jq -r .isDraft <<< "$release") == true ]]
+          else
+            gh release create "$TAG" --verify-tag --draft --title "3X-UI Fork $TAG" \
+              --notes 'See CHANGELOG_FORK.md and FORK_RELEASE.md at this tag for changes and upgrade instructions.'
+          fi
+          gh release upload "$TAG" "${files[@]}" --clobber
 
   # =================================
   #  Rolling dev channel (per-commit)

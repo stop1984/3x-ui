@@ -16,6 +16,7 @@ import (
 	"github.com/mhsanaei/3x-ui/v3/internal/database/model"
 	"github.com/mhsanaei/3x-ui/v3/internal/logger"
 	"github.com/mhsanaei/3x-ui/v3/internal/util/json_util"
+	"github.com/mhsanaei/3x-ui/v3/internal/util/maskcompat"
 	"github.com/mhsanaei/3x-ui/v3/internal/util/random"
 	wgutil "github.com/mhsanaei/3x-ui/v3/internal/util/wireguard"
 )
@@ -131,19 +132,34 @@ func (s *SubJsonService) GetJson(subId string, host string, alwaysReturnArray bo
 
 	var header string
 	var hasInactiveExternal bool
+	var hasBoundClosed bool
 	var hasEnabledClient bool
 
 	seenEmails := make(map[string]struct{})
 	entries := make([]subConfigEntry, 0, len(inbounds))
+	var ordered []orderedSubEntry[func() subConfigEntry]
 	// Prepare Inbounds
 	for _, inbound := range inbounds {
 		clients := subReq.matchingClients(inbound, subId)
 		if len(clients) == 0 {
 			continue
 		}
+		if inbound.ExcludeFromSub {
+			if countHiddenClients(clients, seenEmails) {
+				hasEnabledClient = true
+			}
+			continue
+		}
 		subReq.projectThroughFallbackMaster(inbound)
-		if hostEps := subReq.hostEndpoints(inbound, "json"); len(hostEps) > 0 {
-			injectExternalProxy(inbound, hostEps)
+		var baseEps []map[string]any
+		baseStream := inbound.StreamSettings
+		// getConfig rewrites inbound.Listen/Port per endpoint while rendering a client, so bound
+		// endpoints resolve against this pre-loop snapshot.
+		baseInbound := *inbound
+		if !subReq.hostsFirst {
+			if baseEps = subReq.hostEndpoints(inbound, "json"); len(baseEps) > 0 {
+				injectExternalProxy(inbound, baseEps)
+			}
 		}
 
 		var inboundConfigs []json_util.RawMessage
@@ -152,7 +168,30 @@ func (s *SubJsonService) GetJson(subId string, host string, alwaysReturnArray bo
 				hasEnabledClient = true
 			}
 			seenEmails[client.Email] = struct{}{}
-			inboundConfigs = append(inboundConfigs, s.getConfig(subReq, inbound, client, host)...)
+			if subReq.hostsFirst {
+				variants, closed := subReq.clientHostVariants(&baseInbound, client, "json")
+				hasBoundClosed = hasBoundClosed || closed
+				for _, variant := range variants {
+					render := func() subConfigEntry {
+						configs := s.getConfig(subReq, variant.inbound(subReq, inbound), client, host)
+						return subConfigEntry{sortIndex: inbound.SubSortIndex, id: inbound.Id, configs: configs, hostOrder: variant.order}
+					}
+					ordered = append(ordered, orderedSubEntry[func() subConfigEntry]{variant.order, render})
+				}
+				continue
+			}
+			effective := inbound
+			if effectiveEps, bound := subReq.clientHostEndpoints(&baseInbound, client, "json", baseEps); bound {
+				if len(effectiveEps) == 0 {
+					hasBoundClosed = true
+					continue
+				}
+				clone := baseInbound
+				clone.StreamSettings = baseStream
+				injectExternalProxy(&clone, effectiveEps)
+				effective = &clone
+			}
+			inboundConfigs = append(inboundConfigs, s.getConfig(subReq, effective, client, host)...)
 		}
 		if len(inboundConfigs) > 0 {
 			entries = append(entries, subConfigEntry{
@@ -160,6 +199,14 @@ func (s *SubJsonService) GetJson(subId string, host string, alwaysReturnArray bo
 				id:        inbound.Id,
 				configs:   inboundConfigs,
 			})
+		}
+	}
+	if subReq.hostsFirst {
+		// Render in final endpoint order so first-link usage remarks stay first.
+		for _, render := range orderedSubValues(ordered) {
+			if entry := render(); len(entry.configs) > 0 {
+				entries = append(entries, entry)
+			}
 		}
 	}
 	entries = s.appendBalancerEntries(entries)
@@ -176,6 +223,23 @@ func (s *SubJsonService) GetJson(subId string, host string, alwaysReturnArray bo
 		return entries[i].id < entries[j].id
 	})
 	var configArray []json_util.RawMessage
+	if subReq.hostsFirst {
+		// Preserve balancer slots from the legacy sort; reorder endpoint slots only.
+		var endpoints []subConfigEntry
+		for _, entry := range entries {
+			if entry.kind == 0 {
+				endpoints = append(endpoints, entry)
+			}
+		}
+		sort.SliceStable(endpoints, func(i, j int) bool { return hostOrderLess(endpoints[i].hostOrder, endpoints[j].hostOrder) })
+		next := 0
+		for i := range entries {
+			if entries[i].kind == 0 {
+				entries[i] = endpoints[next]
+				next++
+			}
+		}
+	}
 	for _, entry := range entries {
 		configArray = append(configArray, entry.configs...)
 	}
@@ -209,7 +273,7 @@ func (s *SubJsonService) GetJson(subId string, host string, alwaysReturnArray bo
 		}
 	}
 
-	if len(configArray) == 0 && !hasInactiveExternal {
+	if len(configArray) == 0 && !hasInactiveExternal && !hasBoundClosed {
 		return "", "", nil
 	}
 
@@ -248,6 +312,7 @@ func (s *SubJsonService) GetJson(subId string, host string, alwaysReturnArray bo
 // subConfigEntry is one ordered block of the JSON subscription: an inbound's
 // configs (kind 0) or a balancer config (kind 1).
 type subConfigEntry struct {
+	hostOrder *hostEntryOrder
 	sortIndex int
 	kind      int
 	id        int
@@ -628,8 +693,22 @@ func (s *SubJsonService) getConfig(subReq *SubService, inbound *model.Inbound, c
 		security, _ := newStream["security"].(string)
 		if hasExternalProxy {
 			applyExternalProxyTLSToStream(extPrxy, newStream, security)
+			liftHostTLSVerification(newStream)
 		}
 		applyHostStreamOverrides(extPrxy, newStream)
+		if tlsSettings, ok := newStream["tlsSettings"].(map[string]any); ok && security == "tls" {
+			cs, _ := tlsSettings["cipherSuites"].(string)
+			fp, _ := tlsSettings["fingerprint"].(string)
+			if pinned := fingerprintForCipherSuites(fp, cs); pinned != fp {
+				tlsSettings["fingerprint"] = pinned
+			}
+		}
+		if finalmask, ok := newStream["finalmask"].(map[string]any); ok {
+			newStream["finalmask"] = withLegacyFragmentRanges(finalmask)
+		}
+		// A host's legacy hop still needs the mask; the last-merged hop, the host's, wins.
+		maskcompat.UpgradeLegacyUDPHop(newStream["finalmask"])
+		maskcompat.NormalizeUDPHop(newStream["finalmask"])
 		streamSettings, _ := json.MarshalIndent(newStream, "", "  ")
 		hostMux := hostMuxOverride(extPrxy)
 
@@ -653,6 +732,8 @@ func (s *SubJsonService) getConfig(subReq *SubService, inbound *model.Inbound, c
 			newOutbounds = append(newOutbounds, s.genServer(subReq, inbound, streamSettings, client, jsonMux(mux, hostMux)))
 		case "hysteria":
 			newOutbounds = append(newOutbounds, s.genHy(inbound, newStream, client, jsonMux(mux, hostMux)))
+		case "masque":
+			newOutbounds = append(newOutbounds, s.genMasque(inbound, newStream, client))
 		case "wireguard":
 			wgOutbound := s.genWireguard(inbound, client)
 			if wgOutbound == nil {
@@ -699,7 +780,10 @@ func (s *SubJsonService) streamData(stream string, clientKey string) map[string]
 		}
 	}
 	delete(streamSettings, "sockopt")
+	dropServerOnlyFinalMasks(streamSettings["finalmask"])
 
+	// The inbound's own hop range becomes a mask first, so the global default yields to it.
+	maskcompat.UpgradeLegacyUDPHop(streamSettings["finalmask"])
 	if s.finalMask != "" {
 		s.applyGlobalFinalMask(streamSettings)
 	}
@@ -742,6 +826,10 @@ func (s *SubJsonService) applyGlobalFinalMask(streamSettings map[string]any) {
 	if err := json.Unmarshal([]byte(s.finalMask), &fm); err != nil || len(fm) == 0 {
 		return
 	}
+	// The global hop range is a default: an inbound that advertises its own keeps it.
+	if maskcompat.HasUDPHopMask(streamSettings["finalmask"]) {
+		fm = maskcompat.WithoutUDPHop(fm)
+	}
 	merged := mergeFinalMask(streamSettings["finalmask"], fm)
 	if len(merged) > 0 {
 		streamSettings["finalmask"] = merged
@@ -768,6 +856,23 @@ func (s *SubJsonService) tlsData(tData map[string]any) map[string]any {
 	if cs, ok := tData["cipherSuites"].(string); ok && cs != "" {
 		tlsData["cipherSuites"] = cs
 	}
+	putClientTLSVerification(tlsData, tlsClientSettings)
+	return tlsData
+}
+
+// liftHostTLSVerification moves the host overrides applyExternalProxyTLSToStream
+// wrote into the panel-shaped tlsSettings.settings up to where xray reads them.
+func liftHostTLSVerification(stream map[string]any) {
+	tlsSettings, _ := stream["tlsSettings"].(map[string]any)
+	inner, ok := tlsSettings["settings"].(map[string]any)
+	if !ok {
+		return
+	}
+	delete(tlsSettings, "settings")
+	putClientTLSVerification(tlsSettings, inner)
+}
+
+func putClientTLSVerification(tlsData map[string]any, tlsClientSettings map[string]any) {
 	if ech, ok := tlsClientSettings["echConfigList"].(string); ok && ech != "" {
 		tlsData["echConfigList"] = ech
 	}
@@ -779,7 +884,6 @@ func (s *SubJsonService) tlsData(tData map[string]any) map[string]any {
 	if pins, ok := pinnedSha256List(tlsClientSettings); ok {
 		tlsData["pinnedPeerCertSha256"] = strings.Join(pins, ",")
 	}
-	return tlsData
 }
 
 func (s *SubJsonService) realityData(rData map[string]any, clientKey string) map[string]any {
@@ -850,15 +954,11 @@ func (s *SubJsonService) genVless(subReq *SubService, inbound *model.Inbound, st
 	}
 	outbound.StreamSettings = streamSettings
 
-	// Add encryption for VLESS outbound from inbound settings
-	inboundSettings := subReq.linkSettings(inbound)
-	encryption, _ := inboundSettings["encryption"].(string)
-
 	settings := map[string]any{
 		"address":    inbound.Listen,
 		"port":       inbound.Port,
 		"id":         client.ID,
-		"encryption": encryption,
+		"encryption": vlessClientEncryption(subReq.linkSettings(inbound)),
 		"level":      8,
 	}
 	if client.Flow != "" && !inbound.DisableFlow {
@@ -976,10 +1076,38 @@ func (s *SubJsonService) genHy(inbound *model.Inbound, newStream map[string]any,
 	if finalmask, ok := hyStream["finalmask"].(map[string]any); ok {
 		newStream["finalmask"] = mergeFinalMask(newStream["finalmask"], finalmask)
 	}
+	maskcompat.UpgradeLegacyUDPHop(newStream["finalmask"])
+	maskcompat.NormalizeUDPHop(newStream["finalmask"])
 
 	newStream["network"] = "hysteria"
 	newStream["security"] = "tls"
 
+	outbound.StreamSettings, _ = json.MarshalIndent(newStream, "", "  ")
+
+	result, _ := json.MarshalIndent(outbound, "", "  ")
+	return result
+}
+
+// genMasque builds the client side of a MASQUE inbound: the server reads only the
+// path, and authenticates the CONNECT-IP request by the client's email and password.
+func (s *SubJsonService) genMasque(inbound *model.Inbound, newStream map[string]any, client model.Client) json_util.RawMessage {
+	outbound := Outbound{
+		Protocol: string(inbound.Protocol),
+		Tag:      "proxy",
+		Settings: map[string]any{
+			"address": inbound.Listen,
+			"port":    inbound.Port,
+		},
+	}
+	masqueSettings := map[string]any{"user": client.Email, "pass": client.Password}
+	if server, ok := newStream["masqueSettings"].(map[string]any); ok {
+		if path, ok := server["path"].(string); ok && path != "" {
+			masqueSettings["path"] = path
+		}
+	}
+	newStream["masqueSettings"] = masqueSettings
+	newStream["network"] = "masque"
+	newStream["security"] = "tls"
 	outbound.StreamSettings, _ = json.MarshalIndent(newStream, "", "  ")
 
 	result, _ := json.MarshalIndent(outbound, "", "  ")

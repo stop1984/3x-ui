@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/mhsanaei/3x-ui/v3/internal/database"
+	"github.com/mhsanaei/3x-ui/v3/internal/database/dbtest"
 	"github.com/mhsanaei/3x-ui/v3/internal/database/model"
 
 	"github.com/mymmrac/telego"
@@ -40,28 +40,37 @@ func staleButtonServer(t *testing.T, responses map[string]any) (*httptest.Server
 	}
 }
 
+// setTestBot swaps the process-wide connection the way EnsureBot does: under the
+// mutex, so the race detector sees a well-defined handover.
+func setTestBot(b *telego.Bot) {
+	botMu.Lock()
+	bot = b
+	botMu.Unlock()
+}
+
 func swapTestBot(t *testing.T, url string) {
 	t.Helper()
-	origBot := bot
+	origBot := liveBot()
 	origPool := messageWorkerPool
 	t.Cleanup(func() {
-		bot = origBot
+		setTestBot(origBot)
 		messageWorkerPool = origPool
 	})
-	var err error
-	bot, err = telego.NewBot(testBotToken, telego.WithAPIServer(url))
+	newBot, err := telego.NewBot(testBotToken, telego.WithAPIServer(url))
 	if err != nil {
 		t.Fatalf("NewBot: %v", err)
 	}
+	setTestBot(newBot)
 	messageWorkerPool = make(chan struct{}, 10)
+	// The screen store is process-wide state: a screen left by an earlier test
+	// would make this one edit an unrelated message instead of sending.
+	screens.reset()
+	resetScreenArt()
 }
 
 func newStaleButtonTgbot(t *testing.T) *Tgbot {
 	t.Helper()
-	if err := database.InitDB(filepath.Join(t.TempDir(), "x-ui.db")); err != nil {
-		t.Fatalf("InitDB: %v", err)
-	}
-	t.Cleanup(func() { _ = database.CloseDB() })
+	dbtest.InitDB(t, filepath.Join(t.TempDir(), "x-ui.db"))
 	return &Tgbot{}
 }
 

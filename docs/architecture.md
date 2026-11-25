@@ -19,8 +19,8 @@ Xray JSON config from that state, supervises the Xray child process, and exposes
 WebSocket API. A React SPA (built by Vite, embedded into the Go binary) is the UI. A second,
 separate HTTP server serves **subscription links** to end users.
 
-The panel supervises **managed child processes**: Xray-core itself and — when MTProto or
-TUIC inbounds exist — dedicated child proxy binaries:
+The panel supervises **managed child processes**: Xray-core itself and — when MTProto
+inbounds exist — a dedicated child proxy binary:
 
 - **`mtg-multi` for MTProto inbounds** (`github.com/mhsanaei/mtg-multi`, a multi-secret fork
   built from source; `internal/mtproto/`): One process per inbound serves every attached
@@ -28,10 +28,10 @@ TUIC inbounds exist — dedicated child proxy binaries:
   sponsored-channel ad-tags via `[secret-ad-tags]`. A client or ad-tag edit is hot-applied via
   the fork's management API (`PUT /secrets`, guarded by a per-process bearer token), with a
   process restart as the fallback on older binaries.
-- **`tuic-server` for TUIC v5 inbounds** (`internal/tuic/`): One process per inbound runs on
-  loopback behind an in-process native Go UDP relay that owns the public port and meters
-  traffic deltas. The sidecar handles decrypted client traffic standalone, independent of
-  Xray routing and outbounds.
+
+In contrast, **AmneziaWG** (`internal/amneziawgnet/`) and **TUIC v5** (`internal/tuic/`) run as
+**in-process native Go servers** without external child processes, bridging client traffic into
+Xray-core via loopback SOCKS5 relays.
 
 Servers and processes, all launched from `main.go`:
 
@@ -41,7 +41,6 @@ Servers and processes, all launched from `main.go`:
 | **Subscription** | `internal/sub`                    | Public endpoint that hands out client configs (raw / JSON / Clash) | `subPort` setting |
 | **Xray-core**    | supervised via `internal/xray`    | The actual proxy engine; a child process, not Go code              | `inbounds[].port` |
 | **mtg-multi**    | supervised via `internal/mtproto` | MTProto proxy child process for MTProto inbounds (multi-secret)    | per inbound       |
-| **tuic-server**  | supervised via `internal/tuic`    | TUIC v5 proxy child process fronted by a Go UDP relay              | per inbound       |
 
 Two key ideas that explain most of the complexity:
 
@@ -232,7 +231,7 @@ node heartbeat every 5s, periodic traffic resets (hourly/daily/weekly/monthly). 
 │   │   ├── network/          # Custom net listeners (e.g. proxy-protocol aware)
 │   │   ├── session/          # Session/cookie helpers
 │   │   ├── websocket/        # WS hub implementation
-│   │   ├── locale/ + translation/  # i18n middleware + 13 locale JSON catalogs
+│   │   ├── locale/ + translation/  # i18n middleware + 14 locale JSON catalogs
 │   │   ├── entity/           # Shared request/response DTOs
 │   │   └── dist/             # ⚠️ Vite build output, embedded via go:embed (generated — do not hand-edit)
 │   │
@@ -292,7 +291,7 @@ node heartbeat every 5s, periodic traffic resets (hourly/daily/weekly/monthly). 
 ├── install.sh / update.sh / x-ui.sh                        # VPS install + management CLI
 ├── x-ui.service.*  / x-ui.rc                               # systemd units (debian/rhel/arch) + rc script
 ├── windows_files/                                          # Windows service support
-└── .github/workflows/        # CI: ci.yml, codeql.yml, docker.yml, release.yml, smoke.yml,
+└── .github/workflows/        # CI: ci.yml, codeql.yml, docker.yml, release.yml,
                               #     mutation.yml, cleanup_caches.yml, claude-pr-review.yml,
                               #     claude-issue-analyst.yml
 ```
@@ -321,6 +320,12 @@ Restart is debounced via an atomic "need restart" flag (`SetToNeedRestart` /
 **Key files:** `service/xray.go` (orchestration), `xray/hot_diff.go` (the diff algorithm),
 `xray/process.go` (process lifecycle), `xray/api.go` (gRPC calls), `xray/config.go` (config model).
 
+Inbound-list statistics read only UUID, email and subscription ID from `clients`, joined
+through `client_inbounds` in batches of up to 400 distinct inbound IDs. Full client records
+remain the source for Xray and subscriptions. Missing shared-client traffic is fetched by
+email, including rows owned by an inbound outside the requested list; enrichment preserves
+the stored traffic, lifecycle and last-online fields.
+
 ### 5.2 Runtime abstraction — Local vs Remote (multi-node) ⭐ most important
 
 A "node" (`model.Node`) is another 3x-ui instance this panel controls. Every state-changing
@@ -340,6 +345,22 @@ code_ works whether the target is the local Xray or a remote node.
   `service/node_mtls.go` + `service/setting_mtls.go`.
 - **Dispatch:** `manager.go` → `Manager.RuntimeFor(nodeID *int)`; `nil` nodeID → `Local`,
   otherwise a cached/lazy-loaded `Remote`. `InvalidateNode(id)` drops a cached remote client.
+
+Bearer tokens use the narrowest scope that matches the caller's duties:
+
+| Scope        | Access                                                                 |
+| ------------ | ---------------------------------------------------------------------- |
+| `monitor`    | Read-only status, version, and metric endpoints.                       |
+| `node-sync`  | Node configuration, inbound/client synchronization, traffic, and Xray. |
+| `node-admin` | All `node-sync` access plus `POST /panel/api/server/updatePanel`.      |
+| `admin`      | Every panel API endpoint; intended for fully trusted automation.       |
+
+`node-admin` remains a node synchronization identity when inbound rules are applied. This
+preserves the node-specific validation path while keeping software-update authority separate
+from ordinary `node-sync` credentials. On an mTLS connection, only a valid `node-admin` bearer
+elevates the request; other bearer scopes retain the historical mTLS `node-sync` behavior.
+Existing tokens retain their stored scope, and legacy tokens without one continue to migrate to
+`admin`.
 
 **Node identity & attribution (the hard part).** Inbounds carry a `NodeID` _and_ an
 `OriginNodeGuid`. Because inbounds can be pushed across hops, the panel attributes traffic and
@@ -367,7 +388,20 @@ merged with GUID-based baselines to avoid double counting after resets.
 `job/xray_traffic_job.go`, `job/node_traffic_sync_job.go`, `service/inbound_node.go`
 (`SetRemoteTraffic` / `upsertNodeBaseline`), models `xray.ClientTraffic`,
 `model.NodeClientTraffic`, `model.ClientGlobalTraffic` (cross-master totals).
+A client reset is queued per hosting node in `model.NodePendingReset` (`service/node_reset_queue.go`)
+and replayed by the node sync until the node accepts it.
 Periodic resets: `job/periodic_traffic_reset_job.go` (keyed off `Inbound.TrafficReset`).
+
+Cross-panel totals are stored per master GUID and hosted email, separately from local
+`client_traffics`. Directional counter changes, including lower values and resets, persist
+on the next push. Identical totals refresh only when the persisted timestamp is at least
+one hour old; pushes still send the same batches. Display and quota reads retain the
+inclusive 24-hour persisted-row freshness window. Full-list snapshots remain local-only,
+while slim/detail reads and downstream forwarding retain their global overlays.
+
+The heartbeat coarsens liveness, not counter propagation: an idle master can expire up to
+one hour earlier relative to its final unchanged push. Active hourly refresh leaves roughly
+23 hours of missed-push margin. No cache, external service or configurable interval is added.
 
 ### 5.4 Background jobs (cron)
 
@@ -380,7 +414,7 @@ All registered in `web.go` → `startTask()`. Each is a struct with a `Run()` me
 | `@every 5s`         | `xray_traffic_job`                                                                               | Pull traffic stats from Xray (5s start delay)                                         |
 | `@every 5s`         | `node_heartbeat_job`                                                                             | Probe child nodes (online/offline)                                                    |
 | `@every 5s`         | `node_traffic_sync_job`                                                                          | Pull + merge node traffic; push reconciliation                                        |
-| `@every 10s`        | `check_client_ip_job`                                                                            | Enforce per-client IP limits                                                          |
+| `@every 10s`        | `check_client_ip_job`                                                                            | Record client IPs (30-min window) and enforce per-client IP limits                    |
 | `@every 10s`        | `mtproto_job`                                                                                    | Reconcile `mtg` sidecars against enabled MTProto inbounds                             |
 | `@every 10s`        | `amneziawg_job`                                                                                  | Reconcile embedded AmneziaWG interfaces against enabled local inbounds                |
 | `@every 5m`         | `outbound_subscription_job`                                                                      | Refresh outbound provider configs                                                     |
@@ -465,6 +499,7 @@ for AutoMigrate in `internal/database/db.go`.
 | `Host`                          | Subscription host overrides (per inbound) | `Address`, `Port`, `Sni`, `Path`, `Security`, `Fingerprint`, `SortOrder`, visibility/exclusion flags                                                               |
 | `Node`                          | A managed child panel                     | `Guid`, `Address`, `Status`, `TlsVerifyMode`, `PinnedCertSha256`, `ConfigDirty`, version/heartbeat/metric fields                                                   |
 | `NodeClientTraffic`             | Per-node client traffic baseline          | cross-node merge (anti-double-count)                                                                                                                               |
+| `NodePendingReset`              | Client resets a node has not confirmed    | `NodeId`, `Email`, `QueuedAt`; replayed by the node sync, freezes that client's node verdict until delivered                                                       |
 | `NodeClientIp`                  | Per-node client IP attribution            | `NodeGuid`, `Email`, `Ips`                                                                                                                                         |
 | `ClientGlobalTraffic`           | Cross-master usage totals                 | `MasterGuid`, `Email`, `Up`, `Down`                                                                                                                                |
 | `xray.ClientTraffic`            | Per-client counters (`client_traffics`)   | `Email`, `Up`, `Down`, `Total`, `ExpiryTime`, `LastOnline`                                                                                                         |
@@ -565,7 +600,7 @@ golangci-lint run                   # full lint (gofumpt + goimports formatting)
 go run main.go                      # run the panel locally (serves embedded dist if built)
 ```
 
-**Frontend (`cd frontend`, Node 24 — see `.nvmrc`):**
+**Frontend (`cd frontend`, Node 26 — see `.nvmrc`):**
 
 ```bash
 npm install
@@ -583,9 +618,10 @@ root → `go build ./...` / `go run main.go`.
 **Docker:** `docker compose up -d` (uses `Dockerfile` + `DockerEntrypoint.sh`).
 
 **CI** (`.github/workflows/`): `ci.yml` (build/test/lint), `codeql.yml` (security scan),
-`smoke.yml` (smoke tests), `mutation.yml` (mutation testing), `docker.yml` + `release.yml`
+`mutation.yml` (mutation testing), `docker.yml` + `release.yml`
 (multi-arch image + release builds), `cleanup_caches.yml`, `claude-pr-review.yml` (PR review
-only - it changes no code), `claude-issue-analyst.yml` (issue triage).
+only - it changes no code), `claude-issue-analyst.yml` (issue triage). A maintainer re-runs
+them with a comment starting `@claude review` on a PR or `@claude analyze` on an issue.
 
 ---
 
@@ -604,7 +640,7 @@ only - it changes no code), `claude-issue-analyst.yml` (issue triage).
   (`FetchCertFingerprint`), `service/node_mtls.go`, and `runtime/tls_client.go`.
 - **Restart is signal-driven.** `main.go` traps SIGHUP to restart panel+sub servers; the
   in-process restart hook (`global.SetRestartHook`) funnels into the same path.
-- **i18n:** backend catalogs in `internal/web/translation/` (13 locales, shared with the
+- **i18n:** backend catalogs in `internal/web/translation/` (14 locales, shared with the
   frontend); frontend wiring in `frontend/src/i18n/`. Persian (`fa_IR`) is a first-class
   locale (Jalali calendar via `persian-calendar-suite`).
 - **Tests live next to code** (`foo.go` ↔ `foo_test.go`), plus golden snapshots in

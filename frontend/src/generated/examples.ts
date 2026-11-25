@@ -13,6 +13,7 @@ export const EXAMPLES: Record<string, unknown> = {
     "discordMemory": 0,
     "discordRunTime": "",
     "expireDiff": 0,
+    "externalSubUserAgent": "",
     "externalTrafficInformEnable": false,
     "externalTrafficInformURI": "",
     "happLinkEnable": false,
@@ -38,6 +39,7 @@ export const EXAMPLES: Record<string, unknown> = {
     "ldapUserAttr": "",
     "ldapUserFilter": "",
     "ldapVlessField": "",
+    "nodeDownThreshold": 1,
     "outboundDownThreshold": 1,
     "pageSize": 0,
     "panelOutbound": "",
@@ -64,6 +66,7 @@ export const EXAMPLES: Record<string, unknown> = {
     "subClashEnable": false,
     "subClashEnableRouting": false,
     "subClashPath": "",
+    "subClashRemoteDNS": false,
     "subClashRules": "",
     "subClashURI": "",
     "subClashUserAgentRegex": "",
@@ -80,6 +83,7 @@ export const EXAMPLES: Record<string, unknown> = {
     "subHappExcludeApns": false,
     "subHappExcludeRoutes": "",
     "subHappFallbackUrl": "",
+    "subHappLocalProxyAuth": "",
     "subHappNewUrl": "",
     "subHappNoLimit": false,
     "subHappNotificationExpire": false,
@@ -96,8 +100,37 @@ export const EXAMPLES: Record<string, unknown> = {
     "subHappTunMode": "",
     "subHappTunType": "",
     "subHideSettings": false,
+    "subHostSortMode": "inbound-first",
+    "subIncyAnnounceUrl": "",
+    "subIncyAppAutoDetect": false,
+    "subIncyBannerBgColor": "",
+    "subIncyBannerButtonColor": "",
+    "subIncyBannerButtonText": "",
+    "subIncyBannerButtonUrl": "",
+    "subIncyBannerText": "",
     "subIncyEnableRouting": false,
+    "subIncyFragmentInterval": "",
+    "subIncyFragmentLength": "",
+    "subIncyFragmentPackets": "",
+    "subIncyFragmentationEnable": "",
+    "subIncyHideCheck": "",
+    "subIncyHideUrl": "",
+    "subIncyNoLimitEnabled": "",
+    "subIncyNoisesDelay": "",
+    "subIncyNoisesEnable": "",
+    "subIncyNoisesPacket": "",
+    "subIncyNoisesType": "",
+    "subIncyPerAppEnable": "",
+    "subIncyPerAppList": "",
+    "subIncyPerAppMode": "",
+    "subIncyPremiumUrl": "",
+    "subIncyProfileDescription": "",
+    "subIncyResolveDnsDomain": "",
+    "subIncyResolveDnsIp": "",
+    "subIncyResolveEnable": "",
     "subIncyRoutingRules": "",
+    "subIncySortOrder": "",
+    "subIncySupportEmail": "",
     "subInfoNodeEnable": false,
     "subJsonAlwaysArray": false,
     "subJsonAutoDetect": false,
@@ -162,6 +195,7 @@ export const EXAMPLES: Record<string, unknown> = {
     "discordMemory": 0,
     "discordRunTime": "",
     "expireDiff": 0,
+    "externalSubUserAgent": "",
     "externalTrafficInformEnable": false,
     "externalTrafficInformURI": "",
     "happLinkEnable": false,
@@ -195,6 +229,7 @@ export const EXAMPLES: Record<string, unknown> = {
     "ldapUserAttr": "",
     "ldapUserFilter": "",
     "ldapVlessField": "",
+    "nodeDownThreshold": 1,
     "outboundDownThreshold": 1,
     "pageSize": 0,
     "panelOutbound": "",
@@ -221,6 +256,7 @@ export const EXAMPLES: Record<string, unknown> = {
     "subClashEnable": false,
     "subClashEnableRouting": false,
     "subClashPath": "",
+    "subClashRemoteDNS": false,
     "subClashRules": "",
     "subClashURI": "",
     "subClashUserAgentRegex": "",
@@ -237,6 +273,7 @@ export const EXAMPLES: Record<string, unknown> = {
     "subHappExcludeApns": false,
     "subHappExcludeRoutes": "",
     "subHappFallbackUrl": "",
+    "subHappLocalProxyAuth": "",
     "subHappNewUrl": "",
     "subHappNoLimit": false,
     "subHappNotificationExpire": false,
@@ -253,8 +290,37 @@ export const EXAMPLES: Record<string, unknown> = {
     "subHappTunMode": "",
     "subHappTunType": "",
     "subHideSettings": false,
+    "subHostSortMode": "inbound-first",
+    "subIncyAnnounceUrl": "",
+    "subIncyAppAutoDetect": false,
+    "subIncyBannerBgColor": "",
+    "subIncyBannerButtonColor": "",
+    "subIncyBannerButtonText": "",
+    "subIncyBannerButtonUrl": "",
+    "subIncyBannerText": "",
     "subIncyEnableRouting": false,
+    "subIncyFragmentInterval": "",
+    "subIncyFragmentLength": "",
+    "subIncyFragmentPackets": "",
+    "subIncyFragmentationEnable": "",
+    "subIncyHideCheck": "",
+    "subIncyHideUrl": "",
+    "subIncyNoLimitEnabled": "",
+    "subIncyNoisesDelay": "",
+    "subIncyNoisesEnable": "",
+    "subIncyNoisesPacket": "",
+    "subIncyNoisesType": "",
+    "subIncyPerAppEnable": "",
+    "subIncyPerAppList": "",
+    "subIncyPerAppMode": "",
+    "subIncyPremiumUrl": "",
+    "subIncyProfileDescription": "",
+    "subIncyResolveDnsDomain": "",
+    "subIncyResolveDnsIp": "",
+    "subIncyResolveEnable": "",
     "subIncyRoutingRules": "",
+    "subIncySortOrder": "",
+    "subIncySupportEmail": "",
     "subInfoNodeEnable": false,
     "subJsonAlwaysArray": false,
     "subJsonAutoDetect": false,
@@ -344,6 +410,10 @@ export const EXAMPLES: Record<string, unknown> = {
     "scope": "admin",
     "token": "new-token-string"
   },
+  "Blocker": {
+    "code": "tools",
+    "detail": "awg"
+  },
   "Client": {
     "adTag": "0123456789abcdef0123456789abcdef",
     "allowedIPs": [
@@ -351,6 +421,10 @@ export const EXAMPLES: Record<string, unknown> = {
     ],
     "allowedIPsByInbound": {},
     "auth": "",
+    "clientHostRuleIds": [
+      1,
+      2
+    ],
     "comment": "",
     "created_at": 0,
     "email": "",
@@ -360,7 +434,7 @@ export const EXAMPLES: Record<string, unknown> = {
     "forwardedPorts": "",
     "group": "",
     "id": "",
-    "keepAlive": null,
+    "keepAlive": 0,
     "limitIp": 0,
     "password": "",
     "preSharedKey": "",
@@ -369,6 +443,7 @@ export const EXAMPLES: Record<string, unknown> = {
     "reset": 0,
     "resetDay": 0,
     "resetMax": 0,
+    "resetWeekday": 0,
     "reverse": null,
     "secret": "ee1234567890abcdef1234567890abcd7777772e636c6f7564666c6172652e636f6d",
     "security": "",
@@ -408,6 +483,7 @@ export const EXAMPLES: Record<string, unknown> = {
         "reset": 0,
         "resetDay": 0,
         "resetMax": 0,
+        "resetWeekday": 0,
         "subId": "abcd1234",
         "totalGB": 53687091200,
         "traffic": null,
@@ -438,6 +514,10 @@ export const EXAMPLES: Record<string, unknown> = {
     "adTag": "",
     "allowedIPs": "",
     "auth": "",
+    "clientHostRuleIds": [
+      1,
+      2
+    ],
     "comment": "",
     "createdAt": 0,
     "email": "",
@@ -457,6 +537,7 @@ export const EXAMPLES: Record<string, unknown> = {
     "reset": 0,
     "resetDay": 0,
     "resetMax": 0,
+    "resetWeekday": 0,
     "reverse": null,
     "secret": "",
     "security": "",
@@ -467,6 +548,25 @@ export const EXAMPLES: Record<string, unknown> = {
     "trafficResetDay": 0,
     "updatedAt": 0,
     "uuid": ""
+  },
+  "ClientRenewalPreview": {
+    "canRenew": true,
+    "delayedStart": false,
+    "nextExpiry": "2030-02-01T00:00:00Z",
+    "renewAt": "2030-01-01T00:00:00Z",
+    "renewals": 1,
+    "suggestedExpiry": "2030-01-01T00:00:00Z",
+    "suggestedExpiryTime": 1893456000000,
+    "timeZone": "UTC",
+    "validThrough": "2029-12-31T23:59:59Z"
+  },
+  "ClientRenewalPreviewRequest": {
+    "expiryTime": 1893456000000,
+    "reset": 0,
+    "resetCount": 0,
+    "resetDay": 1,
+    "resetMax": 0,
+    "resetWeekday": 0
   },
   "ClientReverse": {
     "tag": ""
@@ -487,6 +587,7 @@ export const EXAMPLES: Record<string, unknown> = {
     "reset": 0,
     "resetDay": 0,
     "resetMax": 0,
+    "resetWeekday": 0,
     "subId": "abcd1234",
     "totalGB": 53687091200,
     "traffic": null,
@@ -505,6 +606,7 @@ export const EXAMPLES: Record<string, unknown> = {
     "resetCount": 0,
     "resetDay": 0,
     "resetMax": 0,
+    "resetWeekday": 0,
     "subId": "i7tvdpeffi0hvvf1",
     "total": 10737418240,
     "up": 1048576,
@@ -591,6 +693,7 @@ export const EXAMPLES: Record<string, unknown> = {
     "alpn": [
       ""
     ],
+    "cipherSuites": "",
     "createdAt": 0,
     "echConfigList": "",
     "excludeFromSubTypes": [
@@ -617,11 +720,16 @@ export const EXAMPLES: Record<string, unknown> = {
       ""
     ],
     "port": 8443,
+    "randomCount": 1,
     "remark": "cdn-front",
     "security": "same",
     "serverDescription": "",
     "shuffleHost": false,
     "sni": "",
+    "sniSharedRandom": false,
+    "snis": [
+      ""
+    ],
     "sockoptParams": null,
     "sortOrder": 0,
     "tags": [
@@ -636,6 +744,7 @@ export const EXAMPLES: Record<string, unknown> = {
     "alpn": [
       ""
     ],
+    "cipherSuites": "",
     "echConfigList": "",
     "excludeFromSubTypes": [
       ""
@@ -665,11 +774,16 @@ export const EXAMPLES: Record<string, unknown> = {
       ""
     ],
     "port": 0,
+    "randomCount": 1,
     "remark": "",
     "security": "same",
     "serverDescription": "",
     "shuffleHost": false,
     "sni": "",
+    "sniSharedRandom": false,
+    "snis": [
+      ""
+    ],
     "sockoptParams": "",
     "sortOrder": 0,
     "tags": [
@@ -700,6 +814,7 @@ export const EXAMPLES: Record<string, unknown> = {
         "resetCount": 0,
         "resetDay": 0,
         "resetMax": 0,
+        "resetWeekday": 0,
         "subId": "i7tvdpeffi0hvvf1",
         "total": 10737418240,
         "up": 1048576,
@@ -709,6 +824,7 @@ export const EXAMPLES: Record<string, unknown> = {
     "disableFlow": false,
     "down": 0,
     "enable": true,
+    "excludeFromSub": false,
     "expiryTime": 0,
     "fallbackParent": null,
     "id": 1,
@@ -840,6 +956,9 @@ export const EXAMPLES: Record<string, unknown> = {
     "status": "online",
     "tlsVerifyMode": "verify",
     "transitive": false,
+    "unavailableMetrics": [
+      ""
+    ],
     "updatedAt": 1700000000,
     "uptimeSecs": 86400,
     "xrayError": "",
@@ -905,6 +1024,9 @@ export const EXAMPLES: Record<string, unknown> = {
     "status": "online",
     "tlsVerifyMode": "verify",
     "transitive": false,
+    "unavailableMetrics": [
+      ""
+    ],
     "updatedAt": 1700003600,
     "uptimeSecs": 86400,
     "xrayError": "",
@@ -943,10 +1065,23 @@ export const EXAMPLES: Record<string, unknown> = {
     "memPct": 45.2,
     "panelVersion": "v3.x.x",
     "status": "online",
+    "unavailableMetrics": [
+      ""
+    ],
     "uptimeSecs": 86400,
     "xrayError": "",
     "xrayState": "",
     "xrayVersion": "25.10.31"
+  },
+  "Readiness": {
+    "blockers": [
+      {
+        "code": "tools",
+        "detail": "awg"
+      }
+    ],
+    "installCommand": "sudo /usr/local/x-ui/x-ui install-awg-kernel",
+    "ready": false
   },
   "RealityScanResult": {
     "alpn": "h2",
@@ -994,6 +1129,7 @@ export const EXAMPLES: Record<string, unknown> = {
     "jmax": 0,
     "jmin": 0,
     "keepaliveTimeout": "",
+    "kernelMode": false,
     "maxHandshakeAttempts": "",
     "mtu": 0,
     "primaryDns": "",
@@ -1017,6 +1153,39 @@ export const EXAMPLES: Record<string, unknown> = {
     "key": "",
     "value": ""
   },
+  "Sponsor": {
+    "enable": true,
+    "from": "2026-10-01T00:00:00Z",
+    "id": "acme-2026-10",
+    "link": "https://acme.example/?utm_source=3x-ui",
+    "logo": "/sponsors/logo/acme.png",
+    "name": "Acme VPS",
+    "slots": [
+      ""
+    ],
+    "text": {},
+    "title": {},
+    "until": "2026-11-01T00:00:00Z"
+  },
+  "SponsorList": {
+    "contact": "https://t.me/example",
+    "sponsors": [
+      {
+        "enable": true,
+        "from": "2026-10-01T00:00:00Z",
+        "id": "acme-2026-10",
+        "link": "https://acme.example/?utm_source=3x-ui",
+        "logo": "/sponsors/logo/acme.png",
+        "name": "Acme VPS",
+        "slots": [
+          ""
+        ],
+        "text": {},
+        "title": {},
+        "until": "2026-11-01T00:00:00Z"
+      }
+    ]
+  },
   "SubBalancer": {
     "createdAt": 1710000000000,
     "enabled": true,
@@ -1030,6 +1199,12 @@ export const EXAMPLES: Record<string, unknown> = {
     "sortOrder": 1,
     "strategy": "random",
     "updatedAt": 1710000000000
+  },
+  "TgBotCapabilities": {
+    "groupPrivacy": false,
+    "inlineEnabled": true,
+    "running": true,
+    "username": "xui_bot"
   },
   "Traffic": {
     "Down": 2097152,

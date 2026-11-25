@@ -1,5 +1,5 @@
 import { ObjectUtil } from '@/utils';
-import type { SubProfileMode } from '@/schemas/setting';
+import type { SubProfileMode, SubHostSortMode } from '@/schemas/setting';
 
 export class AllSetting {
   webListen = '';
@@ -20,6 +20,7 @@ export class AllSetting {
   remarkTemplate = '{{INBOUND}}-{{EMAIL}}|📊{{TRAFFIC_LEFT}}|⏳{{DAYS_LEFT}}D';
   subShowIdentityOnAllLinks = false;
   subInfoNodeEnable = false;
+  subHostSortMode: SubHostSortMode = 'inbound-first';
   subCalendarExpireInclusive = false;
   subExpiredTemplate = '⛔ {{EMAIL}} | Expired: {{EXPIRE_DATE}}';
   subTrafficDepletedTemplate =
@@ -66,6 +67,7 @@ export class AllSetting {
   restartXrayOnClientDisable = true;
   subCertFile = '';
   subKeyFile = '';
+  externalSubUserAgent = 'v2rayNG/1.8.5';
   subUpdates = 12;
   subEncrypt = true;
   subURI = '';
@@ -73,6 +75,7 @@ export class AllSetting {
   subClashURI = '';
   subClashEnableRouting = false;
   subClashRules = '';
+  subClashRemoteDNS = false;
   subJsonMux = '';
   subJsonRules = '';
   subJsonRoutingRules = '';
@@ -104,6 +107,36 @@ export class AllSetting {
   subHappAutoConnectType = 'lowestdelay';
   subHappPerAppMode = 'off';
   subHappPerAppList = '';
+  subHappLocalProxyAuth = 'auto';
+
+  subIncyAppAutoDetect = false;
+  subIncyProfileDescription = '';
+  subIncySortOrder = '';
+  subIncySupportEmail = '';
+  subIncyAnnounceUrl = '';
+  subIncyPremiumUrl = '';
+  subIncyBannerText = '';
+  subIncyBannerButtonText = '';
+  subIncyBannerButtonUrl = '';
+  subIncyBannerBgColor = '';
+  subIncyBannerButtonColor = '';
+  subIncyHideUrl = '';
+  subIncyHideCheck = '';
+  subIncyNoLimitEnabled = '';
+  subIncyPerAppEnable = '';
+  subIncyPerAppMode = '';
+  subIncyPerAppList = '';
+  subIncyFragmentationEnable = '';
+  subIncyFragmentLength = '';
+  subIncyFragmentInterval = '';
+  subIncyFragmentPackets = '';
+  subIncyNoisesEnable = '';
+  subIncyNoisesType = '';
+  subIncyNoisesPacket = '';
+  subIncyNoisesDelay = '';
+  subIncyResolveEnable = '';
+  subIncyResolveDnsDomain = '';
+  subIncyResolveDnsIp = '';
 
   timeLocation = 'Local';
 
@@ -142,6 +175,7 @@ export class AllSetting {
   smtpCpu = 80;
   smtpMemory = 80;
   outboundDownThreshold = 3;
+  nodeDownThreshold = 1;
   hasTgBotToken = false;
   hasTwoFactorToken = false;
   hasLdapPassword = false;
@@ -184,6 +218,10 @@ export class AllSetting {
     this.outboundDownThreshold = Number.isFinite(threshold)
       ? Math.min(100, Math.max(1, threshold))
       : 3;
+    const nodeThreshold = Math.round(Number(this.nodeDownThreshold));
+    this.nodeDownThreshold = Number.isFinite(nodeThreshold)
+      ? Math.min(100, Math.max(1, nodeThreshold))
+      : 1;
   }
 
   equals(other: AllSetting): boolean {
