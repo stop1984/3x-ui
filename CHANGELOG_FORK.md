@@ -1,5 +1,13 @@
 # Fork Changelog
 
+## v3.11.0-stop1984.3 - 2026-11-25
+
+- Updated the frontend lockfile to `follow-redirects` `1.16.3` for
+  GHSA-mrwp-f3q8-3g9p. This release includes the Go dependency fixes from `.2`.
+- The npm audit still reports the moderate GHSA-g3hv-75wg-m249 in the Swagger
+  dependency chain. The current ApiDOM dependency requires minimatch 10, while
+  the patched minimatch is 11.0.1. The existing `high` audit threshold passes.
+
 ## v3.11.0-stop1984.2 - 2026-11-25
 
 - Updated Go to `1.27.4` for GO-2026-6859, Brotli to `1.2.7` for GO-2026-6888,
