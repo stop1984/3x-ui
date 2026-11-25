@@ -19,7 +19,7 @@ The fork intentionally carries a small behavioral delta:
    `stop1984/3x-ui`; a fork release cannot silently replace itself with an
    upstream build.
 5. Tagged builds report the complete fork version, for example
-   `3.11.0-stop1984.1`. The shared version comparator compares the upstream
+   `3.11.0-stop1984.2`. The shared version comparator compares the upstream
    version first, then the fork revision.
 6. The updater checks the offline migration before starting the panel and
    reports migration and start failures through the update status file.

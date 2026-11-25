@@ -1,5 +1,13 @@
 # Fork Changelog
 
+## v3.11.0-stop1984.2 - 2026-11-25
+
+- Updated Go to `1.27.4` for GO-2026-6859, Brotli to `1.2.7` for GO-2026-6888,
+  and Gorilla WebSocket to `1.5.4-0.20240701034025-d67f41855da4` for GO-2026-6278.
+- A manual Actions run on a stable tag can prepare the same draft as a tag
+  push. Builds started from a branch still use development version metadata.
+- This revision supersedes the unpublished `v3.11.0-stop1984.1` candidate.
+
 ## v3.11.0-stop1984.1 - 2026-11-25
 
 Base: upstream `v3.11.0` (`c621ba9`), including Xray-core `v26.10.21`.

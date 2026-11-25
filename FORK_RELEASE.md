@@ -37,9 +37,9 @@ cd ..
 bash scripts/fork-check.sh
 ```
 
-Run `make verify` before tagging. GitHub Actions is the canonical clean-machine
-result. On small Linux hosts, Oxlint's JavaScript-plugin worker may require
-swap; this is an upstream Oxlint runtime issue rather than a lint result.
+`make verify` runs the local equivalent of the CI checks. Use GitHub Actions
+for the canonical result before publishing. On small Linux hosts, Oxlint's
+JavaScript-plugin worker may require swap.
 
 ## Versioning
 
@@ -52,7 +52,7 @@ v<upstream-major>.<upstream-minor>.<upstream-patch>-stop1984.<revision>
 Example:
 
 ```text
-v3.11.0-stop1984.1
+v3.11.0-stop1984.2
 ```
 
 The release workflow injects the tag into `internal/config.buildVersion`.
@@ -68,6 +68,8 @@ development builds keep upstream's `dev+<commit>` behavior.
 4. Push the reviewed branch to `stop1984/3x-ui`. Installer and updater entry
    points resolve through the repository's default branch (`HEAD`).
 5. Create and push the signed or annotated fork tag.
+   If the push did not start the release workflow, dispatch it with the tag as
+   its ref so the binary receives the stable version and the job stages a draft.
 6. Wait for CI, all eight build jobs and the stable draft job. Verify the packaged
    `amd64` binary reports the fork version. For a database upgrade, rehearse
    the migration and smoke test with an isolated SQLite snapshot.
@@ -102,8 +104,8 @@ For an existing VPSNL installation, use the panel's **Stable** channel or run
 shell, download and run that tag's updater:
 
 ```bash
-XUI_UPDATE_TAG=v3.11.0-stop1984.1 \
-  bash <(curl -fsSL https://raw.githubusercontent.com/stop1984/3x-ui/v3.11.0-stop1984.1/update.sh)
+XUI_UPDATE_TAG=v3.11.0-stop1984.2 \
+  bash <(curl -fsSL https://raw.githubusercontent.com/stop1984/3x-ui/v3.11.0-stop1984.2/update.sh)
 ```
 
 After rollout, verify:
