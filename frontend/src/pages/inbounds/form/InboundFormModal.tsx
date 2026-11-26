@@ -850,8 +850,8 @@ export default function InboundFormModal({
 
   /*
    * Switching `network` swaps which per-network key appears on the wire. Clear
-   * the old network's blob and seed the new one with schema defaults, plus the
-   * FinalMask mkcp-legacy UDP mask when moving to mKCP (removed otherwise).
+   * the old network's blob and seed the new one with schema defaults. mKCP
+   * masks are added explicitly in the FinalMask editor.
    */
   const onNetworkChange = (next: string) => {
     const ALL = [
@@ -878,20 +878,7 @@ export default function InboundFormModal({
       delete cleaned.port;
     }
     cleaned[`${next}Settings`] = newStreamSlice(next);
-    if (next === 'kcp') {
-      const fm = (cleaned.finalmask as Record<string, unknown> | undefined) ?? {};
-      const udp = Array.isArray(fm.udp) ? (fm.udp as unknown[]) : [];
-      const hasMkcp = udp.some((m) => {
-        const entry = m as { type?: string };
-        return entry?.type === 'mkcp-legacy';
-      });
-      if (!hasMkcp) {
-        cleaned.finalmask = {
-          ...fm,
-          udp: [...udp, { type: 'mkcp-legacy', settings: { header: '', value: '' } }],
-        };
-      }
-    } else {
+    if (next !== 'kcp') {
       const fm = cleaned.finalmask as Record<string, unknown> | undefined;
       if (fm && Array.isArray(fm.udp)) {
         const udp = (fm.udp as unknown[]).filter(
@@ -975,6 +962,7 @@ export default function InboundFormModal({
               onChange={field.onChange}
               network={network}
               protocol={protocol}
+              security={security}
               side="server"
             />
           )}

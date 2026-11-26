@@ -685,6 +685,8 @@
         "tlsCertificateRequired": "Перед сохранением импортируйте сертификат TLS или укажите путь к его файлу",
         "tlsPrivateKeyRequired": "Перед сохранением импортируйте закрытый ключ TLS или укажите путь к его файлу",
         "tlsServerCertificateRequired": "Для TLS требуется хотя бы один сертификат сервера с закрытым ключом (encipherment или issue)",
+        "tcpFinalMaskRealityConflict": "TCP-маски несовместимы с REALITY. Удалите настроенные TCP-маски или измените режим защиты.",
+        "chooseUdpMask": "Выберите UDP-маску для добавления",
         "realityTargetNeedsPort": "Цель REALITY должна содержать порт (например, example.com:443)",
         "realityTargetInvalidPort": "У цели REALITY указан недопустимый порт",
         "scan": "Сканировать",

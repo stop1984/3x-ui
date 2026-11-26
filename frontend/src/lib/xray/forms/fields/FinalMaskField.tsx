@@ -9,6 +9,7 @@ interface FinalMaskFieldProps {
   onChange?: (next: FinalMaskStreamSettings) => void;
   network: string;
   protocol: string;
+  security?: string;
   showAll?: boolean;
   side?: 'server' | 'client';
 }
@@ -20,6 +21,7 @@ export default function FinalMaskField({
   onChange,
   network,
   protocol,
+  security,
   showAll,
   side,
 }: FinalMaskFieldProps) {
@@ -55,6 +57,7 @@ export default function FinalMaskField({
         name="finalmask"
         network={network}
         protocol={protocol}
+        security={security}
         form={form}
         showAll={showAll}
         side={side}

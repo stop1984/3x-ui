@@ -12,9 +12,10 @@ The fork intentionally carries a small behavioral delta:
    override. This applies to frontend links, raw subscription links, VMess
    objects, and JSON subscriptions.
 2. The inbound form allows TLS with mKCP for stream protocols that support TLS.
-3. mKCP exposes Salamander as a modern UDP FinalMask option and uses it as the
-   default for a newly added mKCP mask. The UI marks modern, legacy, and
-   advanced mask families explicitly.
+3. mKCP exposes Salamander as a modern UDP FinalMask option. Inbound operators
+   choose a mask explicitly. Switching to mKCP leaves the mask list alone.
+   Existing mKCP Legacy configurations remain editable. The UI marks modern,
+   legacy, and advanced mask families explicitly.
 4. Install, update, menu, and panel self-update operations are pinned to
    `stop1984/3x-ui`; a fork release cannot silently replace itself with an
    upstream build.
@@ -23,6 +24,9 @@ The fork intentionally carries a small behavioral delta:
    version first, then the fork revision.
 6. The updater checks the offline migration before starting the panel and
    reports migration and start failures through the update status file.
+7. The inbound editor follows the server's TCP FinalMask/REALITY validation.
+   It prevents additions with REALITY, lets the operator see and remove any
+   stored TCP masks, and keeps them when security changes in the same draft.
 
 ## Superseded Old Patches
 
@@ -62,6 +66,9 @@ The focused migration gate is:
 
 ```bash
 GOTOOLCHAIN=auto go test ./internal/config ./internal/sub ./internal/web/service/panel
+
+# Both subscription formats must carry a client configuration that connects.
+go test ./internal/sub -run '^TestXHTTPRealitySubscriptionConnects$' -count=1
 
 cd frontend
 npm ci
