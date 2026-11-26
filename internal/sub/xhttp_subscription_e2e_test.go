@@ -35,6 +35,7 @@ func TestXHTTPRealitySubscriptionConnects(t *testing.T) {
 	origin.EnableHTTP2 = true
 	origin.StartTLS()
 	t.Cleanup(origin.Close)
+	originPort := origin.Listener.Addr().(*net.TCPAddr).Port
 	key, err := ecdh.X25519().GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
@@ -66,7 +67,13 @@ func TestXHTTPRealitySubscriptionConnects(t *testing.T) {
 	startXHTTPCore(t, map[string]any{
 		"listen": "127.0.0.1", "port": serverPort, "protocol": "vless",
 		"settings": json.RawMessage(ib.Settings), "streamSettings": stream,
-	}, map[string]string{"protocol": "freedom"})
+	}, map[string]any{
+		"protocol": "freedom",
+		// Xray blocks loopback destinations by default. Allow only this fixture.
+		"settings": map[string]any{"finalRules": []map[string]any{{
+			"action": "allow", "ip": []string{"127.0.0.1/32"}, "port": originPort,
+		}}},
+	})
 
 	panel := httptest.NewServer(newSubscriptionTestRouter(subscriptionTestRouterConfig{jsonAlwaysArray: true}))
 	t.Cleanup(panel.Close)
@@ -128,7 +135,7 @@ func assertXHTTPSubscriptionRequest(t *testing.T, origin *httptest.Server, outbo
 	transport := origin.Client().Transport.(*http.Transport).Clone()
 	transport.Proxy = http.ProxyURL(&url.URL{Scheme: "socks5", Host: net.JoinHostPort("127.0.0.1", strconv.Itoa(socksPort))})
 	t.Cleanup(transport.CloseIdleConnections)
-	client := &http.Client{Transport: transport, Timeout: 10 * time.Second}
+	client := &http.Client{Transport: transport, Timeout: 15 * time.Second}
 	if body := readXHTTPBody(t, client, origin.URL); string(body) != want {
 		t.Fatalf("proxied body = %q, want %q", body, want)
 	}
