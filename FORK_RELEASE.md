@@ -110,8 +110,8 @@ For an existing VPSNL installation, use the panel's **Stable** channel or run
 shell, download and run that tag's updater:
 
 ```bash
-XUI_UPDATE_TAG=v3.11.0-stop1984.3 \
-  bash <(curl -fsSL https://raw.githubusercontent.com/stop1984/3x-ui/v3.11.0-stop1984.3/update.sh)
+XUI_UPDATE_TAG=v3.11.0-stop1984.4 \
+  bash <(curl -fsSL https://raw.githubusercontent.com/stop1984/3x-ui/v3.11.0-stop1984.4/update.sh)
 ```
 
 After rollout, verify:

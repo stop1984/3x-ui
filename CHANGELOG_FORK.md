@@ -1,14 +1,15 @@
 # Fork Changelog
 
-## Unreleased
+## v3.11.0-stop1984.4 - 2026-11-26
 
 - Switching an inbound to mKCP no longer adds a legacy UDP mask. The editor
   offers an explicit mask choice, including Salamander and mKCP Legacy.
 - The inbound form explains the TCP FinalMask/REALITY conflict before saving.
   Existing TCP masks remain visible and removable.
 - Added a loopback test that serves raw and JSON VLESS/XHTTP/REALITY
-  subscriptions through the panel and uses each exported profile to make a
-  real HTTPS request through Xray.
+  subscriptions through the panel and makes a real HTTPS request through each
+  exported VLESS outbound. The test also loads the full JSON profile in Xray
+  and verifies that its routing selects the VLESS outbound.
 
 ## v3.11.0-stop1984.3 - 2026-11-25
 
