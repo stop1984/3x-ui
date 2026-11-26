@@ -605,6 +605,8 @@
         "cipherSuites": "Šifrovacie sady",
         "cipherSuitesNeedUnsafe": "Klienti použijú tieto šifrovacie sady iba s odtlačkom uTLS „unsafe“; pri akomkoľvek inom odtlačku sa ignorujú.",
         "presets": "Predvoľby",
+        "tcpFinalMaskRealityConflict": "Masky TCP nie sú dostupné s REALITY. Odstráňte masky TCP alebo zmeňte nastavenie zabezpečenia.",
+        "chooseUdpMask": "Vyberte masku UDP, ktorú chcete pridať",
         "autoOption": "Automaticky",
         "minMaxVersion": "Najnižšia/najvyššia verzia",
         "rejectUnknownSni": "Odmietnuť neznáme SNI",

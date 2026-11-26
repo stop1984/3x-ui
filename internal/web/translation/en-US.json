@@ -676,6 +676,8 @@
         "tlsCertificateRequired": "Import a TLS certificate or enter its file path before saving",
         "tlsPrivateKeyRequired": "Import the TLS private key or enter its file path before saving",
         "tlsServerCertificateRequired": "TLS requires at least one server certificate with its private key (encipherment or issue)",
+        "tcpFinalMaskRealityConflict": "TCP masks are unavailable with REALITY. Remove any TCP masks or change the security setting.",
+        "chooseUdpMask": "Choose a UDP mask to add",
         "realityTargetNeedsPort": "REALITY target must include a port (e.g. example.com:443)",
         "realityTargetInvalidPort": "REALITY target has an invalid port",
         "scan": "Scan",

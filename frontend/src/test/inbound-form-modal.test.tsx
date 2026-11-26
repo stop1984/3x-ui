@@ -1,5 +1,5 @@
 import { describe, it, expect, onTestFinished, vi } from 'vitest';
-import { screen, act, render, cleanup, fireEvent, waitFor } from '@testing-library/react';
+import { screen, act, render, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
 
 import InboundFormModal from '@/pages/inbounds/form/InboundFormModal';
 import { DBInbound } from '@/models/dbinbound';
@@ -333,6 +333,76 @@ describe('InboundFormModal', () => {
         expect.objectContaining({ enable: false, port: 41234, protocol: 'vless' }),
       );
     });
+  });
+
+  it('switches to mKCP without adding a legacy mask and adds the selected mask', async () => {
+    const post = vi.mocked(HttpUtil.post);
+    post.mockClear();
+    renderModal();
+    fireEvent.click(screen.getByRole('tab', { name: 'Stream' }));
+
+    const transmission = screen.getByRole('combobox', { name: 'Transmission' });
+    chooseSelectOption(transmission.id, 'mKCP');
+
+    const picker = await screen.findByRole('combobox', { name: 'Choose a UDP mask to add' });
+    expect(screen.queryByText('UDP Mask 1')).toBeNull();
+    chooseSelectOption(picker.id, 'Salamander (Modern)');
+    await screen.findByText('UDP Mask 1');
+    expect(screen.queryByText('UDP Mask 2')).toBeNull();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Password' }), {
+      target: { value: 'test-salamander-password' },
+    });
+
+    fireEvent.click(primaryButton());
+    const isAdd = ([url]: unknown[]) => url === '/panel/api/inbounds/add';
+    await waitFor(() => expect(post.mock.calls.some(isAdd)).toBe(true));
+    const payload = post.mock.calls.find(isAdd)![1] as { streamSettings: string };
+    expect(JSON.parse(payload.streamSettings)).toMatchObject({
+      network: 'kcp',
+      finalmask: {
+        udp: [{ type: 'salamander', settings: { password: 'test-salamander-password' } }],
+      },
+    });
+  });
+
+  it('blocks XHTTP Reality with TCP masks and lets the user remove the existing mask', async () => {
+    const post = vi.mocked(HttpUtil.post);
+    post.mockClear();
+    messageError.mockClear();
+    const inbound = cloneLikeVlessInbound('example.com:443');
+    inbound.streamSettings = {
+      ...(inbound.streamSettings as Record<string, unknown>),
+      network: 'xhttp',
+      xhttpSettings: { mode: 'auto', path: '/test' },
+      finalmask: { tcp: [{ type: 'filter', settings: { allowedSourceIPs: ['127.0.0.1/32'] } }] },
+    };
+    renderCloneLikeEdit(inbound);
+
+    fireEvent.click(primaryButton());
+
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: 'Stream' }).getAttribute('aria-selected')).toBe(
+        'true',
+      );
+      expect(messageError).toHaveBeenCalledWith(
+        expect.stringContaining('TCP masks are unavailable with REALITY'),
+      );
+    });
+    expect(post).not.toHaveBeenCalled();
+    expect(screen.getByText('TCP Mask 1')).toBeTruthy();
+    const tcpControls = screen.getByText('TCP Masks').closest('.ant-form-item')! as HTMLElement;
+    expect(within(tcpControls).queryByRole('button', { name: /^Add$/ })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /^Remove$/ }));
+    await waitFor(() => expect(screen.queryByText('TCP Mask 1')).toBeNull());
+    fireEvent.click(primaryButton());
+
+    const isUpdate = ([url]: unknown[]) => url === '/panel/api/inbounds/update/42';
+    await waitFor(() => expect(post.mock.calls.some(isUpdate)).toBe(true));
+    const payload = post.mock.calls.find(isUpdate)![1] as { streamSettings: string };
+    const stream = JSON.parse(payload.streamSettings);
+    expect(stream.security).toBe('reality');
+    expect(stream.finalmask?.tcp ?? []).toEqual([]);
   });
 
   // The core reads an XDRIVE inbound's TLS/REALITY as the storage API's client TLS, so

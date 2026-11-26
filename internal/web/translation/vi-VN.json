@@ -654,6 +654,8 @@
         "cipherSuites": "Bộ mật mã",
         "cipherSuitesNeedUnsafe": "Client chỉ áp dụng các cipher suite này với fingerprint uTLS \"unsafe\"; với fingerprint khác chúng sẽ bị bỏ qua.",
         "presets": "Cấu hình sẵn",
+        "tcpFinalMaskRealityConflict": "Không thể dùng mặt nạ TCP với REALITY. Hãy xóa các mặt nạ TCP hoặc thay đổi cài đặt bảo mật.",
+        "chooseUdpMask": "Chọn mặt nạ UDP để thêm",
         "autoOption": "Tự động",
         "minMaxVersion": "Phiên bản Min/Max",
         "rejectUnknownSni": "Từ chối SNI lạ",

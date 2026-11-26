@@ -1,5 +1,15 @@
 # Fork Changelog
 
+## Unreleased
+
+- Switching an inbound to mKCP no longer adds a legacy UDP mask. The editor
+  offers an explicit mask choice, including Salamander and mKCP Legacy.
+- The inbound form explains the TCP FinalMask/REALITY conflict before saving.
+  Existing TCP masks remain visible and removable.
+- Added a loopback test that serves raw and JSON VLESS/XHTTP/REALITY
+  subscriptions through the panel and uses each exported profile to make a
+  real HTTPS request through Xray.
+
 ## v3.11.0-stop1984.3 - 2026-11-25
 
 - Updated the frontend lockfile to `follow-redirects` `1.16.3` for

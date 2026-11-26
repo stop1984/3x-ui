@@ -603,6 +603,8 @@
         "cipherSuites": "Rangkaian Sandi",
         "cipherSuitesNeedUnsafe": "Klien hanya menerapkan cipher suite ini dengan fingerprint uTLS \"unsafe\"; dengan fingerprint lain akan diabaikan.",
         "presets": "Preset",
+        "tcpFinalMaskRealityConflict": "Masker TCP tidak tersedia dengan REALITY. Hapus masker TCP atau ubah pengaturan keamanan.",
+        "chooseUdpMask": "Pilih masker UDP untuk ditambahkan",
         "autoOption": "Otomatis",
         "minMaxVersion": "Versi Min/Maks",
         "rejectUnknownSni": "Tolak SNI tidak dikenal",

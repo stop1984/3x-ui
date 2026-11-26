@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import {
+  Alert,
   AutoComplete,
   Button,
   Divider,
@@ -32,6 +33,7 @@ export interface FinalMaskFormProps {
   name: NamePath;
   network: string;
   protocol: string;
+  security?: string;
   form: FormInstance;
   // When true, all sections (TCP / UDP / QUIC) are shown regardless of
   // network/protocol. Used by the global sub-JSON finalmask editor where
@@ -307,6 +309,7 @@ export default function FinalMaskForm({
   name,
   network,
   protocol,
+  security,
   form,
   showAll = false,
   side = 'client',
@@ -357,7 +360,12 @@ export default function FinalMaskForm({
   // dialer), so only the UDP mask section applies — TCP masks would never
   // wrap anything even though the leftover network value may be 'tcp'.
   const isWireguard = protocol === 'wireguard';
-  const showTcp = showAll || (!isWireguard && TCP_NETWORKS.includes(network));
+  const blockTcpMasks = side === 'server' && security === 'reality';
+  const tcpMasks = Form.useWatch([...base, 'tcp'], { form, preserve: true });
+  const showTcp =
+    showAll ||
+    (!isWireguard && TCP_NETWORKS.includes(network)) ||
+    (blockTcpMasks && Array.isArray(tcpMasks) && tcpMasks.length > 0);
   // xhttp's HTTP/3 dial runs the UDP masks too, which is where a client's udphop lives.
   const showUdp =
     showAll ||
@@ -379,6 +387,7 @@ export default function FinalMaskForm({
           form={form}
           allowFilter={side === 'server'}
           allowPresets={side === 'client'}
+          allowAdd={!blockTcpMasks}
         />
       )}
       {showUdp && (
@@ -390,6 +399,7 @@ export default function FinalMaskForm({
           network={network}
           allowUdpHop={side === 'client'}
           allowFilter={side === 'server'}
+          selectTypeOnAdd={side === 'server' && network === 'kcp'}
         />
       )}
       {showQuic && (
@@ -421,11 +431,13 @@ function TcpMasksList({
   form,
   allowFilter,
   allowPresets,
+  allowAdd,
 }: {
   base: (string | number)[];
   form: FormInstance;
   allowFilter: boolean;
   allowPresets: boolean;
+  allowAdd: boolean;
 }) {
   const { t } = useTranslation();
   const uid = useId();
@@ -434,34 +446,42 @@ function TcpMasksList({
       {(fields, { add, remove }) => (
         <>
           <Form.Item label="TCP Masks">
-            <Space>
-              <Button
-                type="primary"
-                size="small"
-                icon={<PlusOutlined aria-hidden />}
-                aria-label={t('add')}
-                onClick={() =>
-                  add({ type: 'fragment', settings: defaultTcpMaskSettings('fragment') })
-                }
+            {!allowAdd ? (
+              <Alert
+                type={fields.length > 0 ? 'error' : 'info'}
+                showIcon
+                title={t('pages.inbounds.form.tcpFinalMaskRealityConflict')}
               />
-              {allowPresets && (
-                <Select
-                  id={`${uid}-tcp-presets`}
+            ) : (
+              <Space>
+                <Button
+                  type="primary"
                   size="small"
-                  style={{ minWidth: 160 }}
-                  aria-label={t('pages.inbounds.form.presets')}
-                  placeholder={t('pages.inbounds.form.presets')}
-                  value={null}
-                  options={Object.keys(TCP_MASK_PRESETS).map((name) => ({
-                    value: name,
-                    label: name,
-                  }))}
-                  onChange={(name: string) =>
-                    form.setFieldValue([...base, 'tcp'], structuredClone(TCP_MASK_PRESETS[name]))
+                  icon={<PlusOutlined aria-hidden />}
+                  aria-label={t('add')}
+                  onClick={() =>
+                    add({ type: 'fragment', settings: defaultTcpMaskSettings('fragment') })
                   }
                 />
-              )}
-            </Space>
+                {allowPresets && (
+                  <Select
+                    id={`${uid}-tcp-presets`}
+                    size="small"
+                    style={{ minWidth: 160 }}
+                    aria-label={t('pages.inbounds.form.presets')}
+                    placeholder={t('pages.inbounds.form.presets')}
+                    value={null}
+                    options={Object.keys(TCP_MASK_PRESETS).map((name) => ({
+                      value: name,
+                      label: name,
+                    }))}
+                    onChange={(name: string) =>
+                      form.setFieldValue([...base, 'tcp'], structuredClone(TCP_MASK_PRESETS[name]))
+                    }
+                  />
+                )}
+              </Space>
+            )}
           </Form.Item>
           {fields.map((field, mIdx) => (
             <TcpMaskItem
@@ -1039,6 +1059,7 @@ function UdpMasksList({
   network,
   allowUdpHop,
   allowFilter,
+  selectTypeOnAdd,
 }: {
   base: (string | number)[];
   form: FormInstance;
@@ -1047,23 +1068,43 @@ function UdpMasksList({
   network: string;
   allowUdpHop: boolean;
   allowFilter: boolean;
+  selectTypeOnAdd: boolean;
 }) {
   const { t } = useTranslation();
+  const uid = useId();
+  const options = [
+    ...udpMaskOptions({ isHysteria, isWireguard, network }),
+    ...(allowUdpHop ? [{ value: 'udphop', label: 'UDP Hop' }] : []),
+    ...(allowFilter ? [FILTER_MASK_OPTION] : []),
+  ];
   return (
     <Form.List name={[...base, 'udp']}>
       {(fields, { add, remove }) => (
         <>
-          <Form.Item label="UDP Masks">
-            <Button
-              type="primary"
-              size="small"
-              icon={<PlusOutlined aria-hidden />}
-              aria-label={t('add')}
-              onClick={() => {
-                const def = defaultUdpMaskType({ isHysteria, isWireguard, network });
-                add({ type: def, settings: defaultUdpMaskSettings(def) });
-              }}
-            />
+          <Form.Item label="UDP Masks" htmlFor={selectTypeOnAdd ? `${uid}-udp-add` : undefined}>
+            {selectTypeOnAdd ? (
+              <Select
+                id={`${uid}-udp-add`}
+                size="small"
+                style={{ minWidth: 220 }}
+                aria-label={t('pages.inbounds.form.chooseUdpMask')}
+                placeholder={t('pages.inbounds.form.chooseUdpMask')}
+                value={null}
+                options={options}
+                onChange={(type: string) => add({ type, settings: defaultUdpMaskSettings(type) })}
+              />
+            ) : (
+              <Button
+                type="primary"
+                size="small"
+                icon={<PlusOutlined aria-hidden />}
+                aria-label={t('add')}
+                onClick={() => {
+                  const def = defaultUdpMaskType({ isHysteria, isWireguard, network });
+                  add({ type: def, settings: defaultUdpMaskSettings(def) });
+                }}
+              />
+            )}
           </Form.Item>
           {fields.map((field, mIdx) => (
             <UdpMaskItem
@@ -1072,11 +1113,8 @@ function UdpMasksList({
               displayIndex={mIdx + 1}
               form={form}
               listPath={[...base, 'udp']}
-              isHysteria={isHysteria}
-              isWireguard={isWireguard}
               network={network}
-              allowUdpHop={allowUdpHop}
-              allowFilter={allowFilter}
+              options={options}
               onRemove={() => remove(field.name)}
             />
           ))}
@@ -1091,22 +1129,16 @@ function UdpMaskItem({
   displayIndex,
   form,
   listPath,
-  isHysteria,
-  isWireguard,
   network,
-  allowUdpHop,
-  allowFilter,
+  options,
   onRemove,
 }: {
   fieldName: number;
   displayIndex: number;
   form: FormInstance;
   listPath: (string | number)[];
-  isHysteria: boolean;
-  isWireguard: boolean;
   network: string;
-  allowUdpHop: boolean;
-  allowFilter: boolean;
+  options: Array<{ value: string; label: string }>;
   onRemove: () => void;
 }) {
   const absolutePath = [...listPath, fieldName];
@@ -1119,12 +1151,6 @@ function UdpMaskItem({
       form.setFieldValue(kcpMtuPath, v === 'xdns' ? 900 : 1350);
     }
   };
-
-  const options = [
-    ...udpMaskOptions({ isHysteria, isWireguard, network }),
-    ...(allowUdpHop ? [{ value: 'udphop', label: 'UDP Hop' }] : []),
-    ...(allowFilter ? [FILTER_MASK_OPTION] : []),
-  ];
 
   return (
     <div>

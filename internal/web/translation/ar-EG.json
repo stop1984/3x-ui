@@ -603,6 +603,8 @@
         "cipherSuites": "مجموعات التشفير",
         "cipherSuitesNeedUnsafe": "يطبّق العملاء مجموعات التشفير هذه فقط مع بصمة uTLS \"unsafe\"، وتُتجاهل مع أي بصمة أخرى.",
         "presets": "إعدادات مسبقة",
+        "tcpFinalMaskRealityConflict": "أقنعة TCP غير متاحة مع REALITY. أزل أقنعة TCP أو غيّر إعداد الأمان.",
+        "chooseUdpMask": "اختر قناع UDP لإضافته",
         "autoOption": "تلقائي",
         "minMaxVersion": "إصدار أدنى/أقصى",
         "rejectUnknownSni": "رفض SNI غير معروف",
