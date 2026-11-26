@@ -58,12 +58,9 @@ const InboundTlsSettingsSchema = TlsStreamSettingsSchema.extend({
 
 const InboundSecuritySettingsSchema = securitySettingsSchemaFor(InboundTlsSettingsSchema);
 
-export const InboundStreamFormSchema = NetworkSettingsSchema.and(InboundSecuritySettingsSchema)
-  .and(StreamExtrasSchema)
-  .refine((stream) => stream.security !== 'reality' || !stream.finalmask?.tcp?.length, {
-    path: ['finalmask', 'tcp'],
-    error: 'pages.inbounds.form.tcpFinalMaskRealityConflict',
-  });
+export const InboundStreamFormSchema = NetworkSettingsSchema.and(InboundSecuritySettingsSchema).and(
+  StreamExtrasSchema,
+);
 export type InboundStreamFormValues = z.infer<typeof InboundStreamFormSchema>;
 
 export const TrafficResetSchema = z.enum(['never', 'hourly', 'daily', 'weekly', 'monthly']);

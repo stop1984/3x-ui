@@ -562,6 +562,15 @@ export default function InboundFormModal({
     // settings.fallbacks has no bound field; shouldUnregister=false keeps it from
     // the reset object. An edit sends no clients: the server keeps the stored ones.
     const values = methods.getValues() as InboundFormValues;
+    const stream = getV('streamSettings') as
+      | { security?: string; finalmask?: { tcp?: unknown } }
+      | undefined;
+    const tcpMasks = stream?.finalmask?.tcp;
+    if (stream?.security === 'reality' && Array.isArray(tcpMasks) && tcpMasks.length > 0) {
+      setActiveTab('stream');
+      messageApi.error(t('pages.inbounds.form.tcpFinalMaskRealityConflict'));
+      return;
+    }
     const parsed = InboundFormSchema.safeParse(values);
     if (!parsed.success) {
       const issues = parsed.error.issues;

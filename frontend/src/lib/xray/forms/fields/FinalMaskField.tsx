@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Form } from 'antd';
 
 import { FinalMaskForm } from '@/lib/xray/forms/transport';
@@ -33,15 +33,21 @@ export default function FinalMaskField({
   });
   const lastEmitted = useRef(JSON.stringify(initial));
 
-  const finalmask = Form.useWatch('finalmask', form) as FinalMaskStreamSettings | undefined;
-
-  useEffect(() => {
-    if (finalmask === undefined) return;
-    const serialized = JSON.stringify(finalmask);
+  const emitFinalMask = useCallback(() => {
+    const next = form.getFieldValue('finalmask') as FinalMaskStreamSettings | undefined;
+    if (next === undefined) return;
+    const serialized = JSON.stringify(next);
     if (serialized === lastEmitted.current) return;
     lastEmitted.current = serialized;
-    onChangeRef.current?.(finalmask);
-  }, [finalmask]);
+    onChangeRef.current?.(next);
+  }, [form]);
+
+  // AntD's useWatch is deferred. Emit user edits before the outer form can
+  // submit, and keep watching for programmatic changes such as regeneration.
+  const finalmask = Form.useWatch('finalmask', form);
+  useEffect(() => {
+    if (finalmask !== undefined) emitFinalMask();
+  }, [finalmask, emitFinalMask]);
 
   return (
     <Form
@@ -52,6 +58,7 @@ export default function FinalMaskField({
       wrapperCol={{ sm: { span: 14 } }}
       labelWrap
       initialValues={{ finalmask: initial }}
+      onValuesChange={emitFinalMask}
     >
       <FinalMaskForm
         name="finalmask"
