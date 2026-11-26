@@ -1,5 +1,5 @@
 import { describe, it, expect, onTestFinished, vi } from 'vitest';
-import { screen, act, render, cleanup, fireEvent, waitFor } from '@testing-library/react';
+import { screen, act, render, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
 
 import InboundFormModal from '@/pages/inbounds/form/InboundFormModal';
 import { DBInbound } from '@/models/dbinbound';
@@ -349,6 +349,9 @@ describe('InboundFormModal', () => {
     chooseSelectOption(picker.id, 'Salamander (Modern)');
     await screen.findByText('UDP Mask 1');
     expect(screen.queryByText('UDP Mask 2')).toBeNull();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Password' }), {
+      target: { value: 'test-salamander-password' },
+    });
 
     fireEvent.click(primaryButton());
     const isAdd = ([url]: unknown[]) => url === '/panel/api/inbounds/add';
@@ -356,7 +359,9 @@ describe('InboundFormModal', () => {
     const payload = post.mock.calls.find(isAdd)![1] as { streamSettings: string };
     expect(JSON.parse(payload.streamSettings)).toMatchObject({
       network: 'kcp',
-      finalmask: { udp: [{ type: 'salamander' }] },
+      finalmask: {
+        udp: [{ type: 'salamander', settings: { password: 'test-salamander-password' } }],
+      },
     });
   });
 
@@ -385,7 +390,8 @@ describe('InboundFormModal', () => {
     });
     expect(post).not.toHaveBeenCalled();
     expect(screen.getByText('TCP Mask 1')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Add', exact: true })).toBeNull();
+    const tcpControls = screen.getByText('TCP Masks').closest('.ant-form-item')! as HTMLElement;
+    expect(within(tcpControls).queryByRole('button', { name: 'Add', exact: true })).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Remove', exact: true }));
     await waitFor(() => expect(screen.queryByText('TCP Mask 1')).toBeNull());
