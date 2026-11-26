@@ -17,7 +17,11 @@ import (
 	_ "github.com/xtls/xray-core/app/dispatcher"
 	_ "github.com/xtls/xray-core/app/proxyman/inbound"
 	_ "github.com/xtls/xray-core/app/proxyman/outbound"
+	xraynet "github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/session"
 	"github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/features/routing"
+	routingsession "github.com/xtls/xray-core/features/routing/session"
 	"github.com/xtls/xray-core/infra/conf"
 
 	"github.com/mhsanaei/3x-ui/v3/internal/database"
@@ -88,23 +92,53 @@ func TestXHTTPRealitySubscriptionConnects(t *testing.T) {
 	})
 	t.Run("json", func(t *testing.T) {
 		body := readXHTTPBody(t, panel.Client(), panel.URL+"/json/"+subID)
-		var profiles []struct {
-			Outbounds []map[string]any `json:"outbounds"`
-		}
+		var profiles []json.RawMessage
 		if err := json.Unmarshal(body, &profiles); err != nil {
 			t.Fatalf("JSON subscription: %v", err)
 		}
 		if len(profiles) != 1 {
 			t.Fatalf("JSON subscription: got %d profiles, want one", len(profiles))
 		}
-		for _, outbound := range profiles[0].Outbounds {
+		var profile struct {
+			Outbounds []map[string]any `json:"outbounds"`
+		}
+		if err := json.Unmarshal(profiles[0], &profile); err != nil {
+			t.Fatalf("JSON subscription profile: %v", err)
+		}
+		for _, outbound := range profile.Outbounds {
 			if outbound["protocol"] == "vless" {
-				assertXHTTPSubscriptionRequest(t, origin, outbound, response)
+				tag, _ := outbound["tag"].(string)
+				if tag == "" {
+					t.Fatal("JSON subscription VLESS outbound has no tag")
+				}
+				t.Run("profile", func(t *testing.T) {
+					assertXHTTPJSONProfile(t, profiles[0], tag, originPort)
+				})
+				t.Run("request", func(t *testing.T) {
+					assertXHTTPSubscriptionRequest(t, origin, outbound, response)
+				})
 				return
 			}
 		}
 		t.Fatal("JSON subscription has no VLESS outbound")
 	})
+}
+
+func assertXHTTPJSONProfile(t *testing.T, profile json.RawMessage, proxyTag string, originPort int) {
+	t.Helper()
+	// Initialize the profile unchanged, but don't start its fixed-port listeners.
+	x := newXHTTPCore(t, profile)
+	router := x.GetFeature(routing.RouterType()).(routing.Router)
+	route, err := router.PickRoute(&routingsession.Context{
+		Inbound:  &session.Inbound{Tag: "mixed"},
+		Outbound: &session.Outbound{Target: xraynet.TCPDestination(xraynet.LocalHostIP, xraynet.Port(originPort))},
+	})
+	if err != nil {
+		t.Fatalf("route HTTPS through full JSON subscription profile: %v", err)
+	}
+	if tag := route.GetOutboundTag(); tag != proxyTag {
+		t.Fatalf("JSON subscription routes HTTPS to %q, want VLESS outbound %q", tag, proxyTag)
+	}
 }
 
 func readXHTTPBody(t *testing.T, client *http.Client, address string) []byte {
@@ -161,6 +195,14 @@ func startXHTTPCore(t *testing.T, inbound, outbound any) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	x := newXHTTPCore(t, data)
+	if err := x.Start(); err != nil {
+		t.Fatalf("start Xray instance: %v", err)
+	}
+}
+
+func newXHTTPCore(t *testing.T, data []byte) *core.Instance {
+	t.Helper()
 	var config conf.Config
 	if err := json.Unmarshal(data, &config); err != nil {
 		t.Fatal(err)
@@ -174,7 +216,5 @@ func startXHTTPCore(t *testing.T, inbound, outbound any) {
 		t.Fatalf("create Xray instance: %v", err)
 	}
 	t.Cleanup(func() { _ = x.Close() })
-	if err := x.Start(); err != nil {
-		t.Fatalf("start Xray instance: %v", err)
-	}
+	return x
 }

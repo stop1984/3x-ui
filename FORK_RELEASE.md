@@ -39,8 +39,9 @@ bash scripts/fork-check.sh
 
 The Go suite includes a real Xray loopback test of raw and JSON
 VLESS/XHTTP/REALITY subscriptions. It uses a temporary database and a local
-HTTPS origin. An actual v2rayN import and mKCP with the intended mask/TLS
-settings remain rollout checks.
+HTTPS origin. It also loads the full JSON profile into Xray and checks that
+its routing selects the VLESS outbound. An actual v2rayN import and mKCP with
+the intended mask/TLS settings remain rollout checks.
 
 `make verify` runs the local equivalent of the CI checks. Use GitHub Actions
 for the canonical result before publishing. On small Linux hosts, Oxlint's
