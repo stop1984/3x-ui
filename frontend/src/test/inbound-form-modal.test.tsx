@@ -391,9 +391,9 @@ describe('InboundFormModal', () => {
     expect(post).not.toHaveBeenCalled();
     expect(screen.getByText('TCP Mask 1')).toBeTruthy();
     const tcpControls = screen.getByText('TCP Masks').closest('.ant-form-item')! as HTMLElement;
-    expect(within(tcpControls).queryByRole('button', { name: 'Add', exact: true })).toBeNull();
+    expect(within(tcpControls).queryByRole('button', { name: /^Add$/ })).toBeNull();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Remove', exact: true }));
+    fireEvent.click(screen.getByRole('button', { name: /^Remove$/ }));
     await waitFor(() => expect(screen.queryByText('TCP Mask 1')).toBeNull());
     fireEvent.click(primaryButton());
 
