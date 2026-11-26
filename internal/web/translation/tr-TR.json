@@ -603,6 +603,8 @@
         "cipherSuites": "Şifreleme Takımları",
         "cipherSuitesNeedUnsafe": "İstemciler bu şifre paketlerini yalnızca \"unsafe\" uTLS parmak iziyle uygular; başka bir parmak izinde yok sayılır.",
         "presets": "Hazır ayarlar",
+        "tcpFinalMaskRealityConflict": "TCP maskeleri REALITY ile kullanılamaz. TCP maskelerini kaldırın veya güvenlik ayarını değiştirin.",
+        "chooseUdpMask": "Eklenecek bir UDP maskesi seçin",
         "autoOption": "Otomatik",
         "minMaxVersion": "Min/Maks Sürüm",
         "rejectUnknownSni": "Bilinmeyen SNI Reddet",

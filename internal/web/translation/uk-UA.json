@@ -603,6 +603,8 @@
         "cipherSuites": "Набори шифрів",
         "cipherSuitesNeedUnsafe": "Клієнти застосовують ці набори шифрів лише з відбитком uTLS «unsafe»; з будь-яким іншим відбитком вони ігноруються.",
         "presets": "Пресети",
+        "tcpFinalMaskRealityConflict": "Маски TCP несумісні з REALITY. Видаліть маски TCP або змініть налаштування захисту.",
+        "chooseUdpMask": "Виберіть маску UDP для додавання",
         "autoOption": "Авто",
         "minMaxVersion": "Мін/Макс версія",
         "rejectUnknownSni": "Відхиляти невідомий SNI",

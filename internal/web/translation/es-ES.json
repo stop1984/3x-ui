@@ -603,6 +603,8 @@
         "cipherSuites": "Conjuntos de cifrado",
         "cipherSuitesNeedUnsafe": "Los clientes solo aplican estos cipher suites con la huella uTLS \"unsafe\"; con cualquier otra huella se ignoran.",
         "presets": "Preajustes",
+        "tcpFinalMaskRealityConflict": "Las máscaras TCP no están disponibles con REALITY. Quita las máscaras TCP o cambia la configuración de seguridad.",
+        "chooseUdpMask": "Elige una máscara UDP para añadir",
         "autoOption": "Auto",
         "minMaxVersion": "Versión mín/máx",
         "rejectUnknownSni": "Rechazar SNI desconocido",

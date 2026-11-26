@@ -654,6 +654,8 @@
         "cipherSuites": "暗号スイート",
         "cipherSuitesNeedUnsafe": "クライアントはこれらの暗号スイートを uTLS フィンガープリント \"unsafe\" の場合にのみ適用し、それ以外のフィンガープリントでは無視します。",
         "presets": "プリセット",
+        "tcpFinalMaskRealityConflict": "REALITY では TCP マスクを使用できません。TCP マスクを削除するか、セキュリティ設定を変更してください。",
+        "chooseUdpMask": "追加する UDP マスクを選択",
         "autoOption": "自動",
         "minMaxVersion": "最小/最大バージョン",
         "rejectUnknownSni": "未知の SNI を拒否",

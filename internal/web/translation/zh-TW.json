@@ -603,6 +603,8 @@
         "cipherSuites": "加密套件",
         "cipherSuitesNeedUnsafe": "用戶端僅在 uTLS 指紋為 \"unsafe\" 時套用這些加密套件；使用其他指紋時會被忽略。",
         "presets": "預設集",
+        "tcpFinalMaskRealityConflict": "REALITY 不支援 TCP 遮罩。請移除 TCP 遮罩或變更安全性設定。",
+        "chooseUdpMask": "選擇要新增的 UDP 遮罩",
         "autoOption": "自動",
         "minMaxVersion": "最小/最大版本",
         "rejectUnknownSni": "拒絕未知 SNI",

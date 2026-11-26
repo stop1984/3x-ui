@@ -654,6 +654,8 @@
         "cipherSuites": "Conjuntos de cifras",
         "cipherSuitesNeedUnsafe": "Os clientes só aplicam estes cipher suites com a impressão digital uTLS \"unsafe\"; com qualquer outra eles são ignorados.",
         "presets": "Predefinições",
+        "tcpFinalMaskRealityConflict": "As máscaras TCP não estão disponíveis com REALITY. Remova as máscaras TCP ou altere a configuração de segurança.",
+        "chooseUdpMask": "Escolha uma máscara UDP para adicionar",
         "autoOption": "Auto",
         "minMaxVersion": "Versão mín/máx",
         "rejectUnknownSni": "Rejeitar SNI desconhecido",
